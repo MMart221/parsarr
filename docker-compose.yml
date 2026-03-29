@@ -1,0 +1,24 @@
+services:
+  parsarr:
+    build: .
+    container_name: parsarr
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Config file
+      - ./config.yaml:/config/config.yaml:ro
+      # Staging area — must be accessible by Sonarr/Radarr too
+      - /data/staging:/data/staging
+      # If parsarr reorganises files before import, the source media path
+      # must also be mounted so it can read/move files.
+      - /data/downloads:/data/downloads
+    environment:
+      - PARSARR_LOG_LEVEL=INFO
+    networks:
+      - arr_network
+
+networks:
+  arr_network:
+    external: true
+    name: arr_network
