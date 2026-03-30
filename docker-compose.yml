@@ -1,6 +1,6 @@
 services:
   parsarr:
-    build: .
+    image: ghcr.io/mmart221/parsarr:latest
     container_name: parsarr
     restart: unless-stopped
     ports:

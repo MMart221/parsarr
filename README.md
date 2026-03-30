@@ -63,18 +63,19 @@ A folder is considered **standard** (no action needed) when it has at most one s
 ### Prerequisites
 
 - Docker and Docker Compose
-- Sonarr and/or Radarr running in Docker (or accessible over the network)
+- Sonarr and/or Radarr already running in Docker
 - A shared volume path that parsarr, Sonarr, and Radarr can all read and write
+- The Docker network your \*arr stack uses (typically something like `arr_network`)
 
-### Step 1 — Clone and configure
+### Step 1 — Create your config file
+
+You don't need to clone the repository to run parsarr. Just grab the example config:
 
 ```bash
-git clone https://github.com/youruser/parsarr.git
-cd parsarr
-cp config.yaml.example config.yaml
+curl -o config.yaml https://raw.githubusercontent.com/MMart221/parsarr/main/config.yaml.example
 ```
 
-Open `config.yaml` and fill in your values:
+Then open `config.yaml` and fill in your values:
 
 ```yaml
 # Where parsarr writes reorganized files before import.
@@ -83,32 +84,36 @@ staging_dir: /data/staging
 
 sonarr:
   url: http://sonarr:8989
-  api_key: YOUR_SONARR_API_KEY   # Settings → General → API Key
+  api_key: YOUR_SONARR_API_KEY   # Sonarr → Settings → General → API Key
 
 radarr:
   url: http://radarr:7878
-  api_key: YOUR_RADARR_API_KEY
+  api_key: YOUR_RADARR_API_KEY   # Radarr → Settings → General → API Key
 
-# Optional: a shared secret to verify webhooks come from your own Sonarr/Radarr.
-# Set this here, then add the same value in Sonarr/Radarr webhook settings.
+# Optional: a shared secret to verify webhooks come from your own stack.
+# Set this here, then add the same value in Sonarr/Radarr webhook connection settings.
 webhook_secret: ""
 
 log_level: INFO
 port: 8080
 ```
 
-### Step 2 — Add parsarr to your Docker Compose stack
+### Step 2 — Pull the image and add parsarr to your stack
 
-Add the parsarr service to the same `docker-compose.yml` that runs your other \*arr services, or use the one included in this repo as a starting point. The critical requirements are:
+```bash
+docker pull ghcr.io/mmart221/parsarr:latest
+```
 
-1. **Same Docker network** as Sonarr and Radarr so they can reach each other by service name
-2. **Shared staging volume** so Sonarr/Radarr can access the files parsarr stages for import
-3. **Shared downloads volume** so parsarr can read and reorganize your completed downloads
+Add the following service to your existing `docker-compose.yml`. The three requirements are:
+
+1. **Same Docker network** as Sonarr and Radarr (use your existing network — set `external: true`)
+2. **Shared staging volume** mounted at the same path on parsarr, Sonarr, and Radarr
+3. **Shared downloads volume** so parsarr can read and reorganize completed downloads
 
 ```yaml
 services:
   parsarr:
-    build: .
+    image: ghcr.io/mmart221/parsarr:latest
     container_name: parsarr
     restart: unless-stopped
     ports:
@@ -120,30 +125,17 @@ services:
     networks:
       - arr_network
 
-  sonarr:
-    image: lscr.io/linuxserver/sonarr:latest
-    # ... your existing sonarr config ...
-    volumes:
-      - /data/downloads:/data/downloads
-      - /data/staging:/data/staging    # must match parsarr's staging_dir
-    networks:
-      - arr_network
-
-  radarr:
-    image: lscr.io/linuxserver/radarr:latest
-    # ... your existing radarr config ...
-    volumes:
-      - /data/downloads:/data/downloads
-      - /data/staging:/data/staging
-    networks:
-      - arr_network
+# Make sure your existing Sonarr and Radarr services also mount:
+#   - /data/staging:/data/staging
+# so they can import from the staging folder parsarr creates.
 
 networks:
   arr_network:
-    name: arr_network
+    external: true
+    name: arr_network   # replace with your actual network name
 ```
 
-Start the service:
+Start parsarr:
 
 ```bash
 docker compose up -d parsarr
@@ -298,7 +290,7 @@ Patterns are matched case-insensitively as substrings of the filename. The built
 ## Development
 
 ```bash
-git clone https://github.com/youruser/parsarr.git
+git clone https://github.com/MMart221/parsarr.git
 cd parsarr
 
 python -m venv .venv
@@ -333,6 +325,9 @@ parsarr/
 │   ├── conftest.py          # Shared fixtures (temporary release folders, staging dirs)
 │   ├── test_inspector.py    # Classification logic tests
 │   └── test_processor.py    # File operation tests (dry-run and live)
+├── .github/
+│   └── workflows/
+│       └── publish-image.yml    # Builds and pushes to ghcr.io on push to main / version tag
 ├── config.yaml.example
 ├── Dockerfile
 └── docker-compose.yml
