@@ -100,7 +100,7 @@
   </p>
   <table style="font-size:0.83rem; margin-top:0.75rem;">
     <tr><td class="text-muted" style="width:120px;">Triggers</td><td><strong>On Grab</strong> only</td></tr>
-    <tr><td class="text-muted">URL</td><td class="mono">http://parsarr:{{ settings.port }}/webhook/sonarr/grab</td></tr>
+    <tr><td class="text-muted">URL</td><td class="mono">{{ request.base_url }}webhook/sonarr/grab</td></tr>
     <tr><td class="text-muted">Method</td><td>POST</td></tr>
   </table>
   <p class="text-muted text-small mt-1">

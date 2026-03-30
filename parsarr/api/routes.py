@@ -29,7 +29,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 
-from ..config import settings as _settings
+import parsarr.config as _cfg_module
 from ..jobs import JobState, JobStore
 from ..webhook.schemas import ArrEventType, SonarrGrabWebhook
 
@@ -116,16 +116,15 @@ async def _fire_intake(
     from ..intake import handle_grab
     from ..qb_client import QBittorrentClient
 
-    s = _settings
-    qb = QBittorrentClient(
-        url=s.qbittorrent.url,
-        username=s.qbittorrent.username,
-        password=s.qbittorrent.password,
-    )
-    sonarr = SonarrClient(base_url=s.sonarr.url, api_key=s.sonarr.api_key)
-    db = _get_db()
-
     try:
+        s = _cfg_module.settings
+        qb = QBittorrentClient(
+            url=s.qbittorrent.url,
+            username=s.qbittorrent.username,
+            password=s.qbittorrent.password,
+        )
+        sonarr = SonarrClient(base_url=s.sonarr.url, api_key=s.sonarr.api_key)
+        db = _get_db()
         await handle_grab(
             download_id=download_id,
             release_title=release_title,
@@ -258,13 +257,13 @@ async def _fire_placement(job_id: int) -> None:
     from ..arr.sonarr import SonarrClient
     from ..placer import place_job
 
-    s = _settings
-    sonarr = SonarrClient(base_url=s.sonarr.url, api_key=s.sonarr.api_key)
     db = _get_db()
-    job = db.get_job(job_id)
-    if not job:
-        return
     try:
+        s = _cfg_module.settings
+        sonarr = SonarrClient(base_url=s.sonarr.url, api_key=s.sonarr.api_key)
+        job = db.get_job(job_id)
+        if not job:
+            return
         await place_job(job, s, sonarr, db)
     except Exception:
         logger.exception("Placement failed for job %d", job_id)
@@ -303,7 +302,7 @@ async def add_magnet(body: AddRequest, background_tasks: BackgroundTasks) -> dic
 
     # Add to qBittorrent immediately; intake will poll for metadata
     from ..qb_client import QBittorrentClient
-    s = _settings
+    s = _cfg_module.settings
     qb = QBittorrentClient(
         url=s.qbittorrent.url,
         username=s.qbittorrent.username,
@@ -352,7 +351,7 @@ async def get_series(q: Optional[str] = None) -> list[dict]:
     Pass ``?q=query`` to search; omit for the full library list.
     """
     from ..arr.sonarr import SonarrClient
-    s = _settings
+    s = _cfg_module.settings
     if not s.sonarr.url or not s.sonarr.api_key:
         return []
     client = SonarrClient(base_url=s.sonarr.url, api_key=s.sonarr.api_key)
@@ -392,7 +391,7 @@ async def save_settings(body: SettingsUpdate) -> dict:
     Update runtime settings.  Changes are applied in-memory immediately.
     To persist, write to config.yaml manually (or mount a writable config).
     """
-    s = _settings
+    s = _cfg_module.settings
     if body.sonarr_url is not None:
         s.sonarr.url = body.sonarr_url
     if body.sonarr_api_key is not None:
@@ -424,7 +423,7 @@ async def save_settings(body: SettingsUpdate) -> dict:
 # ---------------------------------------------------------------------------
 
 def _verify_secret(request: Request) -> None:
-    s = _settings
+    s = _cfg_module.settings
     if not s.webhook_secret:
         return
     provided = request.headers.get("X-Parsarr-Secret", "")

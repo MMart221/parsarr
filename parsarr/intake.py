@@ -33,6 +33,9 @@ from .qb_client import QBittorrentClient, QBittorrentError
 
 logger = logging.getLogger(__name__)
 
+# Strong references to fire-and-forget tasks so they aren't GC'd mid-execution.
+_background_tasks: set = set()
+
 
 async def handle_grab(
     download_id: str,
@@ -62,16 +65,24 @@ async def handle_grab(
     effective_placement = placement_mode or settings.placement_mode
     torrent_hash = download_id.lower()
 
-    job = jobs_db.create_job(
-        hash=torrent_hash,
-        title=release_title,
-        sonarr_series_id=sonarr_series_id,
-        placement_mode=effective_placement,
-        state=JobState.SUBMITTED,
-    )
-    logger.info(
-        "Job %d created: hash=%s title=%r", job.id, torrent_hash[:8], release_title
-    )
+    # Reuse an existing job if one was already created (e.g. by /api/add),
+    # otherwise create a new one.
+    job = jobs_db.get_job_by_hash(torrent_hash)
+    if job is None:
+        job = jobs_db.create_job(
+            hash=torrent_hash,
+            title=release_title,
+            sonarr_series_id=sonarr_series_id,
+            placement_mode=effective_placement,
+            state=JobState.SUBMITTED,
+        )
+        logger.info(
+            "Job %d created: hash=%s title=%r", job.id, torrent_hash[:8], release_title
+        )
+    else:
+        logger.info(
+            "Job %d (existing): hash=%s title=%r", job.id, torrent_hash[:8], release_title
+        )
 
     # ------------------------------------------------------------------
     # Phase 1: wait for qBittorrent metadata
@@ -190,8 +201,11 @@ async def handle_grab(
         )
         return current
 
-    # Kick off placement as a new task so this function can return promptly
-    asyncio.create_task(_run_placement(job.id, torrent_hash, jobs_db, settings, sonarr))
+    # Kick off placement as a new task so this function can return promptly.
+    # Store a reference so the task isn't garbage-collected before it runs.
+    task = asyncio.create_task(_run_placement(job.id, torrent_hash, jobs_db, settings, sonarr))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return jobs_db.get_job(job.id)  # type: ignore[return-value]
 
 

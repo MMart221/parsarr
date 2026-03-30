@@ -74,22 +74,25 @@ def create_app() -> FastAPI:
     async def queue_page(request: Request):
         jobs = db.list_jobs(limit=200)
         return templates.TemplateResponse(
+            request,
             "queue.html",
-            {"request": request, "jobs": jobs, "active": "queue"},
+            {"jobs": jobs, "active": "queue"},
         )
 
     @app.get("/add", response_class=HTMLResponse)
     async def add_page(request: Request):
         return templates.TemplateResponse(
+            request,
             "add.html",
-            {"request": request, "active": "add"},
+            {"active": "add"},
         )
 
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request):
         return templates.TemplateResponse(
+            request,
             "settings.html",
-            {"request": request, "settings": s, "active": "settings"},
+            {"settings": s, "active": "settings"},
         )
 
     @app.get("/jobs/{job_id}", response_class=HTMLResponse)
@@ -98,8 +101,9 @@ def create_app() -> FastAPI:
         if not job:
             return HTMLResponse(content="<h1>404 — Job not found</h1>", status_code=404)
         return templates.TemplateResponse(
+            request,
             "job_detail.html",
-            {"request": request, "job": job, "active": "queue"},
+            {"job": job, "active": "queue"},
         )
 
     # ------------------------------------------------------------------
