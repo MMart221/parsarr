@@ -61,7 +61,7 @@ async def place_job(
     # ------------------------------------------------------------------
     # Step 2: inspect
     # ------------------------------------------------------------------
-    jobs_db.update_job_state(job.id, JobState.PROCESSING)
+    await jobs_db.update_job_state(job.id, JobState.PROCESSING)
     profile = inspector.inspect(raw_dir, extra_patterns=settings.extra_patterns)
     logger.info("Job %d: profile = %s", job.id, profile.summary())
 
@@ -83,8 +83,8 @@ async def place_job(
 
     _place_slot(work_slot, target, mode)
     logger.info("Job %d: placed into %s (mode=%s)", job.id, target, mode)
-    jobs_db.update_job_state(job.id, JobState.PLACED)
-    jobs_db.set_target_path(job.id, str(target))
+    await jobs_db.update_job_state(job.id, JobState.PLACED)
+    await jobs_db.set_target_path(job.id, str(target))
 
     # Clean up the work slot after successful placement
     try:
@@ -98,7 +98,7 @@ async def place_job(
     if job.sonarr_series_id:
         try:
             await sonarr.rescan_series(job.sonarr_series_id)
-            jobs_db.update_job_state(job.id, JobState.RESCAN_TRIGGERED)
+            await jobs_db.update_job_state(job.id, JobState.RESCAN_TRIGGERED)
             logger.info(
                 "Job %d: RescanSeries triggered for series_id=%d",
                 job.id,
@@ -116,7 +116,7 @@ async def place_job(
             job.id,
         )
 
-    jobs_db.update_job_state(job.id, JobState.COMPLETED)
+    await jobs_db.update_job_state(job.id, JobState.COMPLETED)
     logger.info("Job %d: completed → %s", job.id, target)
     return target
 

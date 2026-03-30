@@ -72,7 +72,7 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def queue_page(request: Request):
-        jobs = db.list_jobs(limit=200)
+        jobs = await db.list_jobs(limit=200)
         return templates.TemplateResponse(
             request,
             "queue.html",

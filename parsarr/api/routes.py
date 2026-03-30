@@ -145,14 +145,14 @@ async def _fire_intake(
 @router.get("/api/jobs")
 async def list_jobs(limit: int = 100, offset: int = 0) -> list[dict]:
     db = _get_db()
-    jobs = db.list_jobs(limit=limit, offset=offset)
+    jobs = await db.list_jobs(limit=limit, offset=offset)
     return [j.as_dict() for j in jobs]
 
 
 @router.get("/api/jobs/{job_id}")
 async def get_job(job_id: int) -> dict:
     db = _get_db()
-    job = db.get_job(job_id)
+    job = await db.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job.as_dict()
@@ -168,7 +168,7 @@ class MappingUpdate(BaseModel):
 @router.patch("/api/jobs/{job_id}/mapping")
 async def update_mapping(job_id: int, body: MappingUpdate) -> dict:
     db = _get_db()
-    job = db.get_job(job_id)
+    job = await db.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -195,9 +195,9 @@ async def update_mapping(job_id: int, body: MappingUpdate) -> dict:
         finally:
             db._lock.release()
 
-    result = db.update_job_mapping(job_id, updated, target)
+    result = await db.update_job_mapping(job_id, updated, target)
     if result:
-        db.update_job_state(job_id, JobState.AUTO_MAPPED)
+        await db.update_job_state(job_id, JobState.AUTO_MAPPED)
     return result.as_dict() if result else {}
 
 
@@ -208,10 +208,10 @@ class HoldUpdate(BaseModel):
 @router.patch("/api/jobs/{job_id}/hold")
 async def set_hold(job_id: int, body: HoldUpdate) -> dict:
     db = _get_db()
-    job = db.get_job(job_id)
+    job = await db.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    result = db.set_hold(job_id, body.hold)
+    result = await db.set_hold(job_id, body.hold)
     return result.as_dict() if result else {}
 
 
@@ -225,7 +225,7 @@ async def approve_job(job_id: int, background_tasks: BackgroundTasks) -> dict:
     endpoint returns 409 Conflict.
     """
     db = _get_db()
-    job = db.get_job(job_id)
+    job = await db.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -248,7 +248,7 @@ async def approve_job(job_id: int, background_tasks: BackgroundTasks) -> dict:
         )
 
     # Clear hold and fire placement
-    db.set_hold(job_id, False)
+    await db.set_hold(job_id, False)
     background_tasks.add_task(_fire_placement, job_id)
     return {"status": "approved", "job_id": job_id}
 
@@ -267,7 +267,7 @@ async def _fire_placement(job_id: int) -> None:
         await place_job(job, s, sonarr, db)
     except Exception:
         logger.exception("Placement failed for job %d", job_id)
-        db.update_job_state(job_id, JobState.FAILED, error="placement error — check logs")
+        await db.update_job_state(job_id, JobState.FAILED, error="placement error — check logs")
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +319,7 @@ async def add_magnet(body: AddRequest, background_tasks: BackgroundTasks) -> dic
 
     # Create job with optional hold flag
     db = _get_db()
-    job = db.create_job(
+    job = await db.create_job(
         hash=torrent_hash,
         title=title,
         sonarr_series_id=body.series_id,
@@ -327,7 +327,7 @@ async def add_magnet(body: AddRequest, background_tasks: BackgroundTasks) -> dic
         state=JobState.SUBMITTED,
     )
     if body.hold:
-        db.set_hold(job.id, True)
+        await db.set_hold(job.id, True)
 
     background_tasks.add_task(
         _fire_intake,

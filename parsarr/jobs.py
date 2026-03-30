@@ -7,6 +7,7 @@ callers wrap the sync calls via run_in_executor to avoid blocking the event loop
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sqlite3
@@ -173,10 +174,10 @@ class JobStore:
             conn.executescript(_DDL)
 
     # ------------------------------------------------------------------
-    # Write operations
+    # Sync write operations (blocking — call via async wrappers below)
     # ------------------------------------------------------------------
 
-    def create_job(
+    def _sync_create_job(
         self,
         hash: str,
         title: str,
@@ -194,9 +195,9 @@ class JobStore:
                 """,
                 (hash, title, sonarr_series_id, state, placement_mode, now, now),
             )
-            return self.get_job(cur.lastrowid)  # type: ignore[arg-type]
+            return self._sync_get_job(cur.lastrowid)  # type: ignore[arg-type]
 
-    def update_job_state(
+    def _sync_update_job_state(
         self,
         job_id: int,
         state: str,
@@ -208,9 +209,9 @@ class JobStore:
                 "UPDATE jobs SET state=?, error=?, updated_at=? WHERE id=?",
                 (state, error, now, job_id),
             )
-        return self.get_job(job_id)
+        return self._sync_get_job(job_id)
 
-    def update_job_mapping(
+    def _sync_update_job_mapping(
         self,
         job_id: int,
         mapping: dict,
@@ -226,47 +227,47 @@ class JobStore:
                 """,
                 (json.dumps(mapping), target_path, now, job_id),
             )
-        return self.get_job(job_id)
+        return self._sync_get_job(job_id)
 
-    def update_file_tree(self, job_id: int, file_tree: list) -> Optional[Job]:
+    def _sync_update_file_tree(self, job_id: int, file_tree: list) -> Optional[Job]:
         now = _now()
         with self._lock, self._connect() as conn:
             conn.execute(
                 "UPDATE jobs SET file_tree_json=?, updated_at=? WHERE id=?",
                 (json.dumps(file_tree), now, job_id),
             )
-        return self.get_job(job_id)
+        return self._sync_get_job(job_id)
 
-    def set_hold(self, job_id: int, hold: bool) -> Optional[Job]:
+    def _sync_set_hold(self, job_id: int, hold: bool) -> Optional[Job]:
         now = _now()
         with self._lock, self._connect() as conn:
             conn.execute(
                 "UPDATE jobs SET hold=?, updated_at=? WHERE id=?",
                 (int(hold), now, job_id),
             )
-        return self.get_job(job_id)
+        return self._sync_get_job(job_id)
 
-    def set_target_path(self, job_id: int, target_path: str) -> Optional[Job]:
+    def _sync_set_target_path(self, job_id: int, target_path: str) -> Optional[Job]:
         now = _now()
         with self._lock, self._connect() as conn:
             conn.execute(
                 "UPDATE jobs SET target_path=?, updated_at=? WHERE id=?",
                 (target_path, now, job_id),
             )
-        return self.get_job(job_id)
+        return self._sync_get_job(job_id)
 
     # ------------------------------------------------------------------
-    # Read operations
+    # Sync read operations (blocking — call via async wrappers below)
     # ------------------------------------------------------------------
 
-    def get_job(self, job_id: int) -> Optional[Job]:
+    def _sync_get_job(self, job_id: int) -> Optional[Job]:
         with self._lock, self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM jobs WHERE id=?", (job_id,)
             ).fetchone()
             return _row_to_job(tuple(row)) if row else None
 
-    def get_job_by_hash(self, hash: str) -> Optional[Job]:
+    def _sync_get_job_by_hash(self, hash: str) -> Optional[Job]:
         with self._lock, self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM jobs WHERE hash=? ORDER BY id DESC LIMIT 1",
@@ -274,10 +275,65 @@ class JobStore:
             ).fetchone()
             return _row_to_job(tuple(row)) if row else None
 
-    def list_jobs(self, limit: int = 200, offset: int = 0) -> list[Job]:
+    def _sync_list_jobs(self, limit: int = 200, offset: int = 0) -> list[Job]:
         with self._lock, self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM jobs ORDER BY id DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
             return [_row_to_job(tuple(r)) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Async public API
+    # ------------------------------------------------------------------
+
+    async def create_job(
+        self,
+        hash: str,
+        title: str,
+        sonarr_series_id: Optional[int] = None,
+        placement_mode: str = "move",
+        state: str = JobState.SUBMITTED,
+    ) -> Job:
+        return await asyncio.to_thread(
+            self._sync_create_job,
+            hash,
+            title,
+            sonarr_series_id,
+            placement_mode,
+            state,
+        )
+
+    async def update_job_state(
+        self,
+        job_id: int,
+        state: str,
+        error: Optional[str] = None,
+    ) -> Optional[Job]:
+        return await asyncio.to_thread(self._sync_update_job_state, job_id, state, error)
+
+    async def update_job_mapping(
+        self,
+        job_id: int,
+        mapping: dict,
+        target_path: Optional[str] = None,
+    ) -> Optional[Job]:
+        return await asyncio.to_thread(self._sync_update_job_mapping, job_id, mapping, target_path)
+
+    async def update_file_tree(self, job_id: int, file_tree: list) -> Optional[Job]:
+        return await asyncio.to_thread(self._sync_update_file_tree, job_id, file_tree)
+
+    async def set_hold(self, job_id: int, hold: bool) -> Optional[Job]:
+        return await asyncio.to_thread(self._sync_set_hold, job_id, hold)
+
+    async def set_target_path(self, job_id: int, target_path: str) -> Optional[Job]:
+        return await asyncio.to_thread(self._sync_set_target_path, job_id, target_path)
+
+    async def get_job(self, job_id: int) -> Optional[Job]:
+        return await asyncio.to_thread(self._sync_get_job, job_id)
+
+    async def get_job_by_hash(self, hash: str) -> Optional[Job]:
+        return await asyncio.to_thread(self._sync_get_job_by_hash, hash)
+
+    async def list_jobs(self, limit: int = 200, offset: int = 0) -> list[Job]:
+        return await asyncio.to_thread(self._sync_list_jobs, limit, offset)

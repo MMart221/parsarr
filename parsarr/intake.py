@@ -67,9 +67,9 @@ async def handle_grab(
 
     # Reuse an existing job if one was already created (e.g. by /api/add),
     # otherwise create a new one.
-    job = jobs_db.get_job_by_hash(torrent_hash)
+    job = await jobs_db.get_job_by_hash(torrent_hash)
     if job is None:
-        job = jobs_db.create_job(
+        job = await jobs_db.create_job(
             hash=torrent_hash,
             title=release_title,
             sonarr_series_id=sonarr_series_id,
@@ -87,16 +87,16 @@ async def handle_grab(
     # ------------------------------------------------------------------
     # Phase 1: wait for qBittorrent metadata
     # ------------------------------------------------------------------
-    jobs_db.update_job_state(job.id, JobState.METADATA_PENDING)
+    await jobs_db.update_job_state(job.id, JobState.METADATA_PENDING)
     try:
         file_paths = await qb.wait_for_metadata(torrent_hash, timeout=120)
     except QBittorrentError as exc:
         logger.error("Job %d: metadata timeout: %s", job.id, exc)
-        jobs_db.update_job_state(job.id, JobState.FAILED, error=str(exc))
-        return jobs_db.get_job(job.id)  # type: ignore[return-value]
+        await jobs_db.update_job_state(job.id, JobState.FAILED, error=str(exc))
+        return await jobs_db.get_job(job.id)  # type: ignore[return-value]
 
-    jobs_db.update_file_tree(job.id, file_paths)
-    jobs_db.update_job_state(job.id, JobState.METADATA_READY)
+    await jobs_db.update_file_tree(job.id, file_paths)
+    await jobs_db.update_job_state(job.id, JobState.METADATA_READY)
     logger.info("Job %d: metadata ready, %d file(s)", job.id, len(file_paths))
 
     # ------------------------------------------------------------------
@@ -108,8 +108,8 @@ async def handle_grab(
         logger.info(
             "Job %d: release is standard — passthrough, no action taken.", job.id
         )
-        jobs_db.update_job_state(job.id, JobState.PASSTHROUGH)
-        return jobs_db.get_job(job.id)  # type: ignore[return-value]
+        await jobs_db.update_job_state(job.id, JobState.PASSTHROUGH)
+        return await jobs_db.get_job(job.id)  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
     # Phase 3: reroute problematic torrent before completion
@@ -120,10 +120,10 @@ async def handle_grab(
         await qb.set_category(torrent_hash, settings.parsarr_category)
     except Exception as exc:
         logger.error("Job %d: reroute failed: %s", job.id, exc)
-        jobs_db.update_job_state(job.id, JobState.FAILED, error=f"reroute: {exc}")
-        return jobs_db.get_job(job.id)  # type: ignore[return-value]
+        await jobs_db.update_job_state(job.id, JobState.FAILED, error=f"reroute: {exc}")
+        return await jobs_db.get_job(job.id)  # type: ignore[return-value]
 
-    jobs_db.update_job_state(job.id, JobState.REROUTED_TO_STAGING)
+    await jobs_db.update_job_state(job.id, JobState.REROUTED_TO_STAGING)
     logger.info("Job %d: rerouted to managed_download_dir", job.id)
 
     # ------------------------------------------------------------------
@@ -143,8 +143,8 @@ async def handle_grab(
                 "confidence": 1.0,
                 "source": "sonarr_grab",
             }
-            jobs_db.update_job_mapping(job.id, mapping_result_dict, target_path)
-            jobs_db.update_job_state(job.id, JobState.AUTO_MAPPED)
+            await jobs_db.update_job_mapping(job.id, mapping_result_dict, target_path)
+            await jobs_db.update_job_state(job.id, JobState.AUTO_MAPPED)
             logger.info(
                 "Job %d: mapped via Sonarr series %d → %r", job.id, sonarr_series_id, target_path
             )
@@ -164,8 +164,8 @@ async def handle_grab(
                 "confidence": mapping_result.confidence,
                 "source": "auto_map",
             }
-            jobs_db.update_job_mapping(job.id, mapping_dict, mapping_result.target_path)
-            jobs_db.update_job_state(job.id, JobState.AUTO_MAPPED)
+            await jobs_db.update_job_mapping(job.id, mapping_dict, mapping_result.target_path)
+            await jobs_db.update_job_state(job.id, JobState.AUTO_MAPPED)
             logger.info(
                 "Job %d: auto-mapped to %r (confidence=%.2f)",
                 job.id,
@@ -173,27 +173,27 @@ async def handle_grab(
                 mapping_result.confidence,
             )
         else:
-            jobs_db.update_job_state(job.id, JobState.AWAITING_MANUAL_MAPPING)
+            await jobs_db.update_job_state(job.id, JobState.AWAITING_MANUAL_MAPPING)
             logger.info("Job %d: auto-map failed — awaiting manual mapping", job.id)
 
     # ------------------------------------------------------------------
     # Phase 5: wait for download to complete
     # ------------------------------------------------------------------
-    jobs_db.update_job_state(job.id, JobState.DOWNLOADING)
+    await jobs_db.update_job_state(job.id, JobState.DOWNLOADING)
     try:
         await qb.wait_for_completion(torrent_hash, timeout=86400)
     except QBittorrentError as exc:
         logger.error("Job %d: completion timeout: %s", job.id, exc)
-        jobs_db.update_job_state(job.id, JobState.FAILED, error=str(exc))
-        return jobs_db.get_job(job.id)  # type: ignore[return-value]
+        await jobs_db.update_job_state(job.id, JobState.FAILED, error=str(exc))
+        return await jobs_db.get_job(job.id)  # type: ignore[return-value]
 
-    jobs_db.update_job_state(job.id, JobState.READY_TO_PROCESS)
+    await jobs_db.update_job_state(job.id, JobState.READY_TO_PROCESS)
     logger.info("Job %d: download complete, ready to process", job.id)
 
     # ------------------------------------------------------------------
     # Phase 6: place (automatic unless hold=True)
     # ------------------------------------------------------------------
-    current = jobs_db.get_job(job.id)
+    current = await jobs_db.get_job(job.id)
     if current and current.hold:
         logger.info(
             "Job %d: hold=True — pausing before placement, waiting for user approval",
@@ -206,7 +206,7 @@ async def handle_grab(
     task = asyncio.create_task(_run_placement(job.id, torrent_hash, jobs_db, settings, sonarr))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
-    return jobs_db.get_job(job.id)  # type: ignore[return-value]
+    return await jobs_db.get_job(job.id)  # type: ignore[return-value]
 
 
 async def _run_placement(
@@ -222,7 +222,7 @@ async def _run_placement(
     """
     from .placer import place_job
 
-    job = jobs_db.get_job(job_id)
+    job = await jobs_db.get_job(job_id)
     if not job:
         logger.error("_run_placement: job %d not found", job_id)
         return
@@ -231,7 +231,7 @@ async def _run_placement(
         logger.error(
             "Job %d: no target_path set — cannot place without mapping", job_id
         )
-        jobs_db.update_job_state(
+        await jobs_db.update_job_state(
             job_id, JobState.FAILED, error="no target_path — manual mapping required"
         )
         return
@@ -240,4 +240,4 @@ async def _run_placement(
         await place_job(job, settings, sonarr, jobs_db)
     except Exception as exc:
         logger.exception("Job %d: placement failed: %s", job_id, exc)
-        jobs_db.update_job_state(job_id, JobState.FAILED, error=str(exc))
+        await jobs_db.update_job_state(job_id, JobState.FAILED, error=str(exc))
