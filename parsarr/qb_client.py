@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Optional
 
 import httpx
@@ -192,10 +193,10 @@ class QBittorrentClient:
         Returns the list of file path strings from the torrent.
         Raises QBittorrentError on timeout.
         """
-        deadline = asyncio.get_event_loop().time() + timeout
+        deadline = time.monotonic() + timeout
         logger.info("Waiting for metadata for torrent %s...", torrent_hash[:8])
 
-        while asyncio.get_event_loop().time() < deadline:
+        while time.monotonic() < deadline:
             files = await self.get_torrent_files(torrent_hash)
             if files:
                 paths = [f["name"] for f in files]
@@ -221,10 +222,10 @@ class QBittorrentClient:
         Returns the final torrent info dict.
         Raises QBittorrentError on timeout.
         """
-        deadline = asyncio.get_event_loop().time() + timeout
+        deadline = time.monotonic() + timeout
         logger.info("Waiting for completion of torrent %s...", torrent_hash[:8])
 
-        while asyncio.get_event_loop().time() < deadline:
+        while time.monotonic() < deadline:
             info = await self.get_torrent_info(torrent_hash)
             if info and info.get("state") in _COMPLETE_STATES:
                 logger.info("Torrent %s completed (state=%s)", torrent_hash[:8], info["state"])
