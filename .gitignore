@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Type checkers
+.mypy_cache/
+.pyright/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Local config (contains API keys — never commit)
+config.yaml
+
+# Local tooling binaries (not part of the project source)
+uv
+uvx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime data
+/data/
+*.db

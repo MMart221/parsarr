@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Queue — parsarr{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-1">
+  <h1>Queue</h1>
+  <a href="/add" class="btn btn-primary">+ Add Release</a>
+</div>
+
+{% if jobs %}
+<div class="card" style="padding: 0; overflow: hidden;">
+  <table id="jobs-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Title</th>
+        <th>State</th>
+        <th>Hash</th>
+        <th>Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr>
+        <td><a class="table-link" href="/jobs/{{ job.id }}">#{{ job.id }}</a></td>
+        <td><a class="table-link" href="/jobs/{{ job.id }}">{{ job.title }}</a></td>
+        <td>
+          <span class="badge badge-{{ job.state }}">{{ job.state }}</span>
+          {% if job.hold %}<span class="badge badge-hold">hold</span>{% endif %}
+        </td>
+        <td class="text-muted text-small mono">{{ job.hash[:8] if job.hash else "" }}</td>
+        <td class="text-muted text-small">{{ job.updated_at[:16].replace("T", " ") if job.updated_at else "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <p>No jobs yet.</p>
+  <p class="mt-1"><a href="/add">Add a release</a> or configure the <a href="/settings">Sonarr On Grab webhook</a> to get started.</p>
+</div>
+{% endif %}
+{% endblock %}

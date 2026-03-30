@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}parsarr{% endblock %}</title>
+  <link rel="stylesheet" href="/static/main.css">
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <div class="brand">parsarr</div>
+    <a href="/" class="{% if active == 'queue' %}active{% endif %}">Queue</a>
+    <a href="/add" class="{% if active == 'add' %}active{% endif %}">Add Release</a>
+    <a href="/settings" class="{% if active == 'settings' %}active{% endif %}">Settings</a>
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="/static/main.js"></script>
+</body>
+</html>

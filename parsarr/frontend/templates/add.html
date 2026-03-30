@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Add Release — parsarr{% endblock %}
+{% block content %}
+<h1>Add Release</h1>
+
+<div class="card">
+  <form id="add-form">
+    <div class="form-group">
+      <label for="magnet">Magnet link <span style="color:var(--danger);">*</span></label>
+      <textarea id="magnet" name="magnet" required
+                placeholder="magnet:?xt=urn:btih:…"></textarea>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="title">Title (optional — used as display name)</label>
+        <input type="text" id="title" name="title" placeholder="Auto-detected from magnet">
+      </div>
+      <div class="form-group">
+        <label for="media_type">Media type</label>
+        <select id="media_type" name="media_type">
+          <option value="tv" selected>TV</option>
+          <option value="anime">Anime</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="series-title-input">Map to series (optional)</label>
+        <input type="text" id="series-title-input" name="series_title"
+               list="series-options"
+               placeholder="Search your Sonarr library…"
+               autocomplete="off">
+        <datalist id="series-options"></datalist>
+        <p class="text-muted text-small mt-1">Start typing to search. Leave blank for auto-detection.</p>
+      </div>
+      <div class="form-group">
+        <label for="season">Season number (optional)</label>
+        <input type="text" id="season" name="season" placeholder="e.g. 3">
+      </div>
+    </div>
+
+    <hr>
+
+    <div class="toggle-wrap mb-1">
+      <label class="toggle">
+        <input type="checkbox" id="hold-check" name="hold">
+        <span class="slider"></span>
+      </label>
+      <span>Enable Hold for this release</span>
+    </div>
+    <p class="text-muted text-small mb-1">
+      Hold pauses the job before final placement so you can review and adjust the mapping.
+      Leave off to let Parsarr proceed automatically.
+    </p>
+
+    <div class="btn-row">
+      <button type="submit" class="btn btn-primary">Add to queue</button>
+      <a href="/" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h3>How this works</h3>
+  <ol style="padding-left:1.25rem; font-size:0.875rem; line-height:2;">
+    <li>The magnet is sent to qBittorrent under the <code>parsarr-managed</code> category.</li>
+    <li>Parsarr fetches the torrent file list as soon as qBittorrent has metadata.</li>
+    <li>The release is classified (standard vs. problematic structure).</li>
+    <li>For problematic releases, Parsarr reorganizes and places files into the correct library path.</li>
+    <li>Sonarr is asked to rescan after placement.</li>
+  </ol>
+</div>
+{% endblock %}

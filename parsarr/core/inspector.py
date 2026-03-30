@@ -176,6 +176,80 @@ def _scan_files(root: Path, extra_patterns: list[str]) -> list[FileInfo]:
     return infos
 
 
+def classify_tree(
+    paths: list[str],
+    extra_patterns: Optional[list[str]] = None,
+) -> ReleaseProfile:
+    """
+    Classify a virtual file list (e.g. from qBittorrent metadata) without
+    requiring any files to exist on disk.
+
+    *paths* is the list of relative path strings returned by qBittorrent's
+    ``GET /api/v2/torrents/files`` endpoint (the ``name`` field of each entry).
+
+    Returns a ReleaseProfile whose ``root`` is ``Path(".")``.
+    """
+    if extra_patterns is None:
+        extra_patterns = _DEFAULT_EXTRA_PATTERNS
+
+    profile = ReleaseProfile(root=Path("."))
+
+    infos: list[FileInfo] = []
+    for path_str in paths:
+        p = Path(path_str)
+        depth = len(p.parts) - 1
+        name_lower = p.name.lower()
+        suffix = p.suffix.lower()
+        is_video = suffix in VIDEO_EXTENSIONS
+        is_companion = suffix in COMPANION_EXTENSIONS
+        season_match = _SEASON_RE.search(p.name)
+        season = int(season_match.group(1)) if season_match else None
+        extra = _is_extra(name_lower, extra_patterns)
+        infos.append(
+            FileInfo(
+                path=p,
+                is_video=is_video,
+                is_companion=is_companion,
+                season=season,
+                is_extra=extra,
+                depth=depth,
+            )
+        )
+
+    profile.files = infos
+
+    if not profile.video_files:
+        profile.is_standard = True
+        return profile
+
+    # Pass 1: season detection from non-extra videos
+    seasons: set[int] = set()
+    for vf in profile.video_files:
+        if vf.season is not None and not vf.is_extra:
+            seasons.add(vf.season)
+    profile.seasons_found = seasons
+
+    # Pass 2: promote seasonless videos to extras in a show release
+    if seasons:
+        for f in profile.files:
+            if f.is_video and not f.is_extra and f.season is None:
+                f.is_extra = True
+
+    episode_files = profile.episode_files
+    profile.has_extras = len(episode_files) < len(profile.video_files)
+    max_depth = max((vf.depth for vf in episode_files), default=0)
+    profile.needs_flatten = max_depth > 1
+    profile.is_multi_season = len(seasons) > 1
+    profile.is_standard = (
+        not profile.is_multi_season
+        and not profile.needs_flatten
+        and not profile.has_extras
+    )
+
+    logger.debug("classify_tree result: %s", profile.summary())
+    return profile
+
+
 def inspect(
     root: Path,
     extra_patterns: Optional[list[str]] = None,

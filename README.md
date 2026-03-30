@@ -2,59 +2,92 @@
 
 **Media import preprocessor for the \*arr stack.**
 
-Parsarr sits between your completed media folders and Sonarr/Radarr. When a completed download lands on disk, it inspects the folder structure and normalizes it into the layout those tools expect — then hands it back for import automatically.
+Parsarr helps with **release structure normalization**: messy folder trees, multi-season bundles, nested paths, bonus content mixed with main files, and sidecars that don’t line up with what your library tools expect. It sits in front of Sonarr and qBittorrent. When Sonarr sends a release to qBittorrent, Parsarr can intercept it at **grab** time — before the download finishes — inspect the torrent’s file list from metadata, and decide whether the layout needs intervention.
 
-It is designed for one specific problem: **media folder structures that Sonarr and Radarr cannot reliably import on their own.** These are typically complete-series or multi-season releases, folders with bonus content mixed in alongside episodes, or deeply nested directory trees where the actual video files are buried several levels down.
+For releases that already look **standard**, Parsarr records a passthrough and leaves Sonarr’s normal download path alone. For **problematic** structures, Parsarr takes ownership: it reroutes the torrent into a managed download area, reorganizes files after completion in a separate work staging area, places the cleaned result directly into your library path, and triggers a Sonarr rescan. Sonarr only sees the normalized result, not the raw pack layout.
+
+A lightweight web UI is included for manual magnet intake, job monitoring, mapping overrides, and settings.
 
 ---
 
 ## Why Parsarr?
 
-Sonarr and Radarr expect a fairly predictable structure when they import files. A single season in a single folder, video files at the top level, subtitles alongside the video they belong to. When a folder doesn't match that shape, the import either fails silently or requires manual intervention.
+Tools like Sonarr expect a fairly predictable layout when importing: seasons in recognizable folders, main media files easy to find, subtitles and artwork paired with the right files. When a release doesn’t match that shape — because of how it was packed — the import can fail quietly, import only part of the release, or leave you fixing paths by hand.
 
-Common structures that cause problems:
+Common patterns that cause trouble:
 
-- **Multi-season collections** — all seasons in one folder, or one top-level folder with per-season subfolders that Sonarr won't split automatically
-- **Nested release trees** — video files buried two or three directories deep inside a folder hierarchy
-- **Bonus content mixed with episodes** — commentary files, featurettes, making-of videos, interview clips, and menu art all sitting alongside the actual episodes with no separation
-- **Orphaned sidecars** — subtitle files, `.nfo` metadata, or artwork that won't follow the video through a move unless explicitly paired
+- **Multi-season collections** — several seasons in one tree, or per-season folders that the importer won’t split the way you need
+- **Complete-series or bulk packs** — everything in one archive with a flat or uneven directory layout
+- **Nested release trees** — media files buried several levels deep under extra folder layers
+- **Bonus content mixed with main files** — commentaries, featurettes, extras, and menu assets sitting next to primary content with no clear separation
+- **Orphaned sidecars** — subtitles, `.nfo` files, or images that won’t move with the right file unless they’re explicitly matched
 
-Parsarr handles all of these before the import is triggered. Sonarr and Radarr receive a clean, organized staging folder rather than the raw download.
-
----
-
-## What it does
-
-```
-Download completes
-    → Sonarr/Radarr fires a webhook to parsarr
-    → parsarr inspects the folder structure
-    → if already well-formed: acknowledge and do nothing
-    → if reorganization is needed:
-        → create an isolated staging folder
-        → split episodes into Season XX/ subdirectories
-        → flatten any deeply nested tree
-        → move bonus content to _extras/ (preserving its own subfolder structure)
-        → pair subtitles, NFO files, and artwork with their matching episode
-        → trigger ManualImport back in Sonarr/Radarr pointing at the staging folder
-```
-
-A CLI is also included so you can run the same logic manually — useful for testing, dry-running against a folder before committing, or cleaning up a backlog.
+Parsarr classifies and, when needed, restructures that material **before** Sonarr is left to interpret a finished download on its own.
 
 ---
 
-## Classification logic
+## How it works
 
-Parsarr's inspector classifies every incoming folder before touching anything. Each file gets a role:
+There are two intake paths.
+
+### Path A — Sonarr-originated releases
+
+```
+Sonarr grabs a release → sends it to qBittorrent
+    → Sonarr fires On Grab webhook to Parsarr
+    → Parsarr reads downloadId (torrent hash) from webhook
+    → Parsarr polls qBittorrent until file metadata is ready
+    → Parsarr classifies the virtual file tree
+
+    If standard:
+        → job recorded as passthrough
+        → torrent stays in Sonarr's normal qB category and path
+        → Sonarr/qBittorrent proceed as usual — Parsarr takes no action
+
+    If problematic:
+        → Parsarr reroutes the torrent (setLocation + setCategory)
+          into the managed download area before completion
+        → Sonarr's Completed Download Handling does not fire
+          (wrong category/path)
+        → Parsarr auto-maps to the correct Sonarr series
+        → Download completes under Parsarr control
+        → Parsarr reorganizes files into a work staging area
+        → Parsarr places cleaned files directly into the library path
+        → Parsarr triggers Sonarr RescanSeries
+        → Sonarr sees only the clean, correctly-organized result
+```
+
+### Path B — Manual magnet intake
+
+```
+User pastes magnet into Parsarr UI
+    → Parsarr adds it to qBittorrent (parsarr-managed category)
+    → Parsarr polls qBittorrent for metadata
+    → Parsarr shows the file tree, classification, and proposed mapping
+    → User can adjust mapping if needed, or let Parsarr proceed
+    → Parsarr reorganizes, places, and triggers Sonarr rescan
+```
+
+### Default behavior and Hold
+
+Parsarr is **automatic by default**. Once a problematic release is classified and mapped, it continues through to placement without requiring approval.
+
+Each job has an optional **Hold** toggle. Hold is off by default. When Hold is enabled for a specific job, Parsarr pauses before final placement and waits for user approval. The Approve button only appears — and only does anything — when a job is explicitly on Hold. Approval is not a normal gate.
+
+---
+
+## File classification
+
+Parsarr's inspector classifies every file in a release before touching anything:
 
 | Role | Criteria |
 |------|----------|
 | **Episode** | Video file with a detectable season/episode token (`S01E01` style) |
-| **Extra** | Video with no season token in a show release; or filename matches a bonus-content pattern (featurette, commentary, making-of, etc.) |
+| **Extra** | Video with no season token in a series-style release; or filename matches a bonus-content pattern |
 | **Companion** | Subtitle, NFO, or artwork whose stem exactly matches an episode filename |
-| **Extra asset** | Companion file with no matching episode (e.g. folder-level artwork, menu images) |
+| **Extra asset** | Companion file with no matching episode (folder-level artwork, menu images, etc.) |
 
-A folder is considered **standard** (no action needed) when it has at most one season, no nesting beyond one subfolder, and no extras mixed in. Standard releases are acknowledged and skipped — parsarr only acts when it finds something to fix.
+A release is **standard** when it has at most one season, no nesting beyond one subfolder, and no extras mixed in.
 
 ---
 
@@ -63,52 +96,57 @@ A folder is considered **standard** (no action needed) when it has at most one s
 ### Prerequisites
 
 - Docker and Docker Compose
-- Sonarr and/or Radarr already running in Docker
-- A shared volume path that parsarr, Sonarr, and Radarr can all read and write
-- The Docker network your \*arr stack uses (typically something like `arr_network`)
+- Sonarr already running in Docker
+- qBittorrent with its Web UI accessible to Parsarr on the Docker network
+- A shared media root volume that Parsarr, Sonarr, and qBittorrent can all access
+- The Docker network your stack uses (e.g. `arr_network`)
 
 ### Step 1 — Create your config file
 
-You don't need to clone the repository to run parsarr. Just grab the example config:
-
 ```bash
-curl -o config.yaml https://raw.githubusercontent.com/MMart221/parsarr/main/config.yaml.example
+curl -o config.yaml \
+  https://raw.githubusercontent.com/MMart221/parsarr/main/config.yaml.example
 ```
 
-Then open `config.yaml` and fill in your values:
+Open `config.yaml` and fill in your values:
 
 ```yaml
-# Where parsarr writes reorganized files before import.
-# This path must be accessible to Sonarr and Radarr as well.
-staging_dir: /data/staging
-
 sonarr:
   url: http://sonarr:8989
-  api_key: YOUR_SONARR_API_KEY   # Sonarr → Settings → General → API Key
+  api_key: YOUR_SONARR_API_KEY
 
-radarr:
-  url: http://radarr:7878
-  api_key: YOUR_RADARR_API_KEY   # Radarr → Settings → General → API Key
+qbittorrent:
+  url: http://qbittorrent:8080
+  username: admin
+  password: adminadmin
 
-# Optional: a shared secret to verify webhooks come from your own stack.
-# Set this here, then add the same value in Sonarr/Radarr webhook connection settings.
-webhook_secret: ""
+# Must match the category name you create in Step 2.
+parsarr_category: parsarr-managed
 
-log_level: INFO
-port: 8080
+# Adjust these paths to match your actual media layout.
+managed_download_dir: /media/downloads/managed
+staging_dir: /media/staging
+media_roots:
+  tv: /media/tv
+
+placement_mode: move   # move, copy, or hardlink
 ```
 
-### Step 2 — Pull the image and add parsarr to your stack
+### Step 2 — Create the qBittorrent category
+
+In qBittorrent, go to **View → Categories → Add category** (or use the right-click menu in the sidebar) and create a category named `parsarr-managed`.
+
+This is the category Parsarr uses for rerouted and manually-added torrents. Sonarr must **not** be configured to auto-import from this category.
+
+To verify: in Sonarr, go to **Settings → Download Clients → qBittorrent** and confirm the category field there (usually `sonarr`) does not match `parsarr-managed`.
+
+### Step 3 — Pull the image and add Parsarr to your stack
 
 ```bash
 docker pull ghcr.io/mmart221/parsarr:latest
 ```
 
-Add the following service to your existing `docker-compose.yml`. The three requirements are:
-
-1. **Same Docker network** as Sonarr and Radarr (use your existing network — set `external: true`)
-2. **Shared staging volume** mounted at the same path on parsarr, Sonarr, and Radarr
-3. **Shared downloads volume** so parsarr can read and reorganize completed downloads
+Add the following to your existing `docker-compose.yml` or use the provided one as a starting point:
 
 ```yaml
 services:
@@ -120,84 +158,79 @@ services:
       - "8080:8080"
     volumes:
       - ./config.yaml:/config/config.yaml:ro
-      - /data/staging:/data/staging
-      - /data/downloads:/data/downloads
+      # Mount your full media root so Parsarr can reach
+      # library paths, the managed download area, and work staging.
+      # Replace /srv/media with your actual host path.
+      - /srv/media:/media
+      - parsarr_data:/data
     networks:
       - arr_network
 
-# Make sure your existing Sonarr and Radarr services also mount:
-#   - /data/staging:/data/staging
-# so they can import from the staging folder parsarr creates.
+volumes:
+  parsarr_data:
 
 networks:
   arr_network:
     external: true
-    name: arr_network   # replace with your actual network name
+    name: arr_network   # your actual network name
 ```
 
-Start parsarr:
+Start Parsarr:
 
 ```bash
 docker compose up -d parsarr
 ```
 
-### Step 3 — Connect Sonarr to parsarr
+### Step 4 — Connect Sonarr to Parsarr
 
-1. In Sonarr, go to **Settings → Connect → + (Add Connection)**
+1. In Sonarr, go to **Settings → Connect → + Add Connection**
 2. Choose **Webhook**
 3. Fill in:
-   - **Name:** parsarr
-   - **URL:** `http://parsarr:8080/webhook/sonarr`
+   - **Name:** Parsarr
+   - **Triggers:** check **On Grab** only
+   - **URL:** `http://parsarr:8080/webhook/sonarr/grab`
    - **Method:** POST
-   - **Triggers:** check **On Import** (and **On Upgrade** if you want upgrades processed too)
-   - **Secret:** paste the same value as `webhook_secret` in your config (leave blank if not using one)
-4. Click **Test** — you should see `{"status":"ok","message":"test event acknowledged"}` in the Sonarr log and parsarr's log
+   - **Secret:** paste the value from `webhook_secret` in your config (leave blank if not set)
+4. Click **Test** — you should see `{"status":"ok","message":"test event acknowledged"}` in Sonarr's logs
 
-### Step 4 — Connect Radarr to parsarr
+> **Important:** The trigger must be **On Grab**, not On Import or On Download. Parsarr intercepts at grab time so it can reroute problematic releases before the download completes.
 
-Same steps as above, but:
-- **URL:** `http://parsarr:8080/webhook/radarr`
+### Step 5 — Open the Parsarr UI
 
-### Step 5 — Verify with a dry run
+Navigate to `http://localhost:8080` (or the appropriate host if Parsarr is running on a remote machine).
 
-Before relying on the automatic flow, test parsarr against a real folder from your library:
+The **Settings** page shows a webhook setup summary and lets you verify your qBittorrent and Sonarr connections.
 
-```bash
-# Inspect without touching anything
-docker exec parsarr python -m parsarr.main inspect /data/downloads/some-folder
+### Step 6 — How it behaves from here
 
-# See exactly what would be moved where
-docker exec parsarr python -m parsarr.main test /data/downloads/some-folder
-```
+Once connected:
 
-If the dry-run output looks right, the live webhook flow will produce identical results.
-
-### Step 6 — Normal workflow from here
-
-Once connected, the flow is fully automatic:
-
-1. Your download client finishes a download
-2. Sonarr or Radarr picks it up and fires a webhook to parsarr
-3. Parsarr inspects the folder — if it's already clean, nothing happens
-4. If it needs work, parsarr reorganizes the files into a staging slot and calls Sonarr/Radarr's ManualImport API
-5. Sonarr/Radarr completes the import from the staging folder as if you had triggered it manually
+- **Standard releases** — Parsarr records them as passthrough and leaves them entirely to Sonarr. No intervention, no extra steps.
+- **Problematic releases** — Parsarr reroutes them automatically, reorganizes after download, places the cleaned files, and triggers a rescan. You'll see the job in the queue with a state like `rerouted_to_staging → processing → completed`.
+- **Jobs that need mapping** — if Parsarr can't confidently auto-map a release to a series, the job enters `awaiting_manual_mapping`. Open the job detail page to assign a series and target path, then the job continues.
 
 ---
 
 ## CLI reference
 
-All commands are available both inside Docker (`docker exec parsarr python -m parsarr.main <cmd>`) and directly if you're running outside a container.
+The CLI is useful for testing the inspector and processor against local folders, or for debugging a release before relying on the automatic flow.
+
+All commands work both inside Docker and when running directly.
 
 ### `inspect <path>`
 
 Classify a folder without modifying anything. Shows each file's detected role, season, and depth.
 
 ```bash
-python -m parsarr.main inspect /data/downloads/My.Show.Complete.Series
+# Inside Docker
+docker exec parsarr python -m parsarr.main inspect /media/downloads/some-release
+
+# Or directly
+python -m parsarr.main inspect /path/to/release
 ```
 
 ```
-ReleaseProfile('My.Show.Complete.Series', flags=[multi-season, has-extras], seasons=[1, 2, 3], episodes=36, extras=12)
+ReleaseProfile('My.Show.S01-S03', flags=[multi-season, has-extras], seasons=[1, 2, 3], episodes=36, extras=12)
   Episodes : 36
   Extras   : 12
   Seasons  : [1, 2, 3]
@@ -208,8 +241,7 @@ ReleaseProfile('My.Show.Complete.Series', flags=[multi-season, has-extras], seas
 
 Files:
   [VIDEO    ] S01        depth=1  My Show - S01E01 - Pilot.mkv
-  [VIDEO    ] S01        depth=1  My Show - S01E02 - Episode Two.mkv
-  ...
+  [VIDEO    ] S01        depth=1  My Show - S01E02 - Second Episode.mkv
   [VIDEO    ]   ?? [EXTRA]  depth=2  Behind the Scenes.mkv
   [COMPANION]   ?? [EXTRA]  depth=2  menu art.png
 ```
@@ -219,63 +251,45 @@ Files:
 Dry-run: show every planned file operation without executing any of them.
 
 ```bash
-python -m parsarr.main test /data/downloads/My.Show.Complete.Series
-```
-
-### `run <path>`
-
-Process a folder live. Use `--app` to trigger import in Sonarr or Radarr afterward.
-
-```bash
-# Reorganize only, no import trigger
-python -m parsarr.main run /data/downloads/My.Show.Complete.Series --app=none
-
-# Reorganize and trigger Sonarr import
-python -m parsarr.main run /data/downloads/My.Show.Complete.Series \
-    --app=sonarr \
-    --import-mode=Move
-
-# Reorganize and trigger Radarr import, with a specific movie ID
-python -m parsarr.main run /data/downloads/My.Movie.2024 \
-    --app=radarr \
-    --movie-id=42
-```
-
-### `serve`
-
-Start the webhook HTTP server (this is what the Docker container runs by default).
-
-```bash
-python -m parsarr.main serve --host 0.0.0.0 --port 8080
+python -m parsarr.main test /path/to/release
 ```
 
 ---
 
 ## Configuration reference
 
+All settings can be provided in `config.yaml` or as environment variables prefixed with `PARSARR_` (nested keys use `__` as separator).
+
 | Key | Default | Description |
 |-----|---------|-------------|
-| `staging_dir` | `/data/staging` | Directory where reorganized files are placed before import |
 | `sonarr.url` | — | Sonarr base URL |
 | `sonarr.api_key` | — | Sonarr API key (Settings → General) |
-| `radarr.url` | — | Radarr base URL |
-| `radarr.api_key` | — | Radarr API key (Settings → General) |
-| `webhook_secret` | `""` | If set, verified against the `X-Parsarr-Secret` request header |
-| `log_level` | `INFO` | Python log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `port` | `8080` | Port the webhook server listens on |
-| `extra_patterns` | (list) | Additional lowercase substrings that identify a file as bonus content |
+| `qbittorrent.url` | — | qBittorrent WebUI URL |
+| `qbittorrent.username` | `admin` | qBittorrent login |
+| `qbittorrent.password` | `adminadmin` | qBittorrent password |
+| `parsarr_category` | `parsarr-managed` | qB category for Parsarr-owned torrents; Sonarr must not watch this |
+| `managed_download_dir` | `/media/downloads/managed` | Where rerouted torrents download |
+| `staging_dir` | `/media/staging` | Temporary work area for reorganization |
+| `media_roots.tv` | `/media/tv` | Primary library root used when placing cleaned files |
+| `placement_mode` | `move` | How files are placed: `move`, `copy`, or `hardlink` |
+| `db_path` | `/data/parsarr.db` | SQLite job database |
+| `webhook_secret` | `""` | If set, verified against `X-Parsarr-Secret` header |
+| `log_level` | `INFO` | Python log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `port` | `8080` | Port the server listens on |
+| `extra_patterns` | (list) | Additional lowercase substrings that mark a file as bonus content |
 
-All settings can be provided as environment variables prefixed with `PARSARR_`. Nested keys use double-underscore as separator:
+### Environment variable examples
 
 ```bash
 PARSARR_SONARR__API_KEY=abc123
-PARSARR_STAGING_DIR=/mnt/staging
+PARSARR_QBITTORRENT__URL=http://qbittorrent:8080
+PARSARR_PLACEMENT_MODE=hardlink
 PARSARR_LOG_LEVEL=DEBUG
 ```
 
-### Extending extra detection
+### Extending bonus-content detection
 
-Parsarr ships with a broad set of patterns for bonus content (featurettes, commentaries, making-of videos, animatics, etc.). If a specific content type in your library isn't being caught, add it to `config.yaml`:
+Parsarr includes a default set of patterns for identifying bonus content (featurettes, commentaries, production materials, etc.). To add custom patterns:
 
 ```yaml
 extra_patterns:
@@ -307,36 +321,45 @@ pytest tests/ -v
 ```
 parsarr/
 ├── parsarr/
-│   ├── main.py              # FastAPI app factory and CLI entry point
-│   ├── config.py            # Settings loader (config.yaml + environment variables)
-│   ├── cli.py               # CLI commands: serve, inspect, test, run
-│   ├── webhook/
-│   │   ├── routes.py        # POST /webhook/sonarr, /webhook/radarr, GET /health
-│   │   └── schemas.py       # Pydantic models for Sonarr and Radarr webhook payloads
+│   ├── main.py              # FastAPI app factory, page routes, startup
+│   ├── config.py            # Settings loader (config.yaml + env vars)
+│   ├── cli.py               # CLI commands: serve, inspect, test
+│   ├── jobs.py              # SQLite job store and Job dataclass
+│   ├── intake.py            # On Grab orchestrator: poll → classify → reroute → map
+│   ├── mapper.py            # Auto-map torrent title to Sonarr series
+│   ├── placer.py            # Reorganize and place files into library path
+│   ├── qb_client.py         # qBittorrent WebUI API client
+│   ├── api/
+│   │   └── routes.py        # All REST endpoints + webhook receiver
+│   ├── arr/
+│   │   ├── client.py        # Shared async HTTP client (httpx)
+│   │   └── sonarr.py        # Sonarr API: series lookup, RescanSeries
 │   ├── core/
-│   │   ├── inspector.py     # Folder scanner and release classifier (single source of truth)
+│   │   ├── inspector.py     # Folder scanner + classify_tree (virtual file list)
 │   │   ├── processor.py     # File operations: flatten, split seasons, stage extras
-│   │   └── staging.py       # Staging directory lifecycle (create, list, cleanup)
-│   └── arr/
-│       ├── client.py        # Shared async HTTP client (httpx)
-│       ├── sonarr.py        # Sonarr API: ManualImport, RescanSeries
-│       └── radarr.py        # Radarr API: ManualImport, RescanMovie
+│   │   └── staging.py       # Staging slot lifecycle
+│   ├── frontend/
+│   │   ├── templates/       # Jinja2 templates (base, queue, job_detail, add, settings)
+│   │   └── static/          # main.css, main.js
+│   └── webhook/
+│       └── schemas.py       # Pydantic models for Sonarr On Grab payload
 ├── tests/
-│   ├── conftest.py          # Shared fixtures (temporary release folders, staging dirs)
-│   ├── test_inspector.py    # Classification logic tests
-│   └── test_processor.py    # File operation tests (dry-run and live)
+│   ├── conftest.py
+│   ├── test_inspector.py
+│   └── test_processor.py
 ├── .github/
 │   └── workflows/
-│       └── publish-image.yml    # Builds and pushes to ghcr.io on push to main / version tag
+│       └── publish-image.yml
 ├── config.yaml.example
 ├── Dockerfile
 └── docker-compose.yml
 ```
 
+---
+
 ## Project status
 
-Parsarr is primarily a personal project built to solve my own workflow. It is public in case others find it useful. Pull requests and forks are welcome.
-
+Parsarr is a personal project built to solve a specific workflow problem. It is public in case others find it useful. Pull requests and forks are welcome.
 
 ## License
 

@@ -24,9 +24,20 @@ _DEFAULT_EXTRA_PATTERNS = [
 ]
 
 
-class ArrServiceConfig(BaseModel):
+class SonarrConfig(BaseModel):
     url: str = ""
     api_key: str = ""
+
+
+class QBittorrentConfig(BaseModel):
+    url: str = ""
+    username: str = "admin"
+    password: str = "adminadmin"
+
+
+class MediaRoots(BaseModel):
+    tv: Path = Path("/media/tv")
+    anime: Path = Path("/media/anime")
 
 
 class Settings(BaseSettings):
@@ -36,9 +47,28 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    staging_dir: Path = Path("/data/staging")
-    sonarr: ArrServiceConfig = ArrServiceConfig()
-    radarr: ArrServiceConfig = ArrServiceConfig()
+    sonarr: SonarrConfig = SonarrConfig()
+    qbittorrent: QBittorrentConfig = QBittorrentConfig()
+
+    # qBittorrent category Parsarr uses for rerouted and manual torrents.
+    # Sonarr must NOT be configured to auto-import from this category.
+    parsarr_category: str = "parsarr-managed"
+
+    # Where qBittorrent is redirected to store a problematic release while it
+    # is still downloading.  Sonarr never sees this area.
+    managed_download_dir: Path = Path("/media/downloads/managed")
+
+    # Parsarr's temporary work area: files are reorganized here before being
+    # placed into the final library path.
+    staging_dir: Path = Path("/media/staging")
+
+    media_roots: MediaRoots = MediaRoots()
+    db_path: Path = Path("/data/parsarr.db")
+
+    # How Parsarr moves cleaned files into the final library path.
+    # Allowed values: move, copy, hardlink
+    placement_mode: str = "move"
+
     webhook_secret: str = ""
     log_level: str = "INFO"
     port: int = 8080
@@ -54,7 +84,7 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
     """
     Load settings with the following precedence (highest wins):
       1. Environment variables prefixed with PARSARR_
-      2. config.yaml (path from PARSARR_CONFIG or the config_path arg)
+      2. config.yaml (path from PARSARR_CONFIG env var or config_path arg)
       3. Defaults
     """
     env_config = os.environ.get("PARSARR_CONFIG")
@@ -67,7 +97,6 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
         if p.exists():
             resolved_path = p
 
-    # Fall back to config.yaml next to the workspace root
     if resolved_path is None:
         candidates = [
             Path.cwd() / "config.yaml",
@@ -83,9 +112,8 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
         logger.debug("Loading config from %s", resolved_path)
         yaml_data = _load_yaml(resolved_path)
 
-    # Pydantic-settings will overlay env vars on top of the yaml values.
     return Settings(**yaml_data)
 
 
-# Module-level singleton — replaced by load_settings() at startup.
+# Module-level singleton — replaced at startup by load_settings().
 settings: Settings = Settings()

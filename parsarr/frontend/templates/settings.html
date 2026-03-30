@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Settings — parsarr{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+
+<div class="alert alert-info">
+  Changes here update the running configuration immediately. To make them permanent,
+  update your <code>config.yaml</code> file.
+</div>
+
+<form id="settings-form">
+  <div class="card">
+    <h2>Sonarr</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="sonarr_url">Sonarr URL</label>
+        <input type="url" id="sonarr_url" name="sonarr_url"
+               value="{{ settings.sonarr.url }}" placeholder="http://sonarr:8989">
+      </div>
+      <div class="form-group">
+        <label for="sonarr_api_key">API Key</label>
+        <input type="password" id="sonarr_api_key" name="sonarr_api_key"
+               value="{{ settings.sonarr.api_key }}" placeholder="Sonarr → Settings → General">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>qBittorrent</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="qb_url">qBittorrent URL</label>
+        <input type="url" id="qb_url" name="qb_url"
+               value="{{ settings.qbittorrent.url }}" placeholder="http://qbittorrent:8080">
+      </div>
+      <div class="form-group">
+        <label for="qb_username">Username</label>
+        <input type="text" id="qb_username" name="qb_username"
+               value="{{ settings.qbittorrent.username }}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="qb_password">Password</label>
+        <input type="password" id="qb_password" name="qb_password"
+               placeholder="Leave blank to keep current">
+      </div>
+      <div class="form-group">
+        <label for="parsarr_category">Parsarr qB category</label>
+        <input type="text" id="parsarr_category" name="parsarr_category"
+               value="{{ settings.parsarr_category }}"
+               placeholder="parsarr-managed">
+        <p class="text-muted text-small mt-1">Sonarr must NOT watch this category for auto-import.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Media roots</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="tv_root">TV root</label>
+        <input type="text" id="tv_root" name="tv_root"
+               value="{{ settings.media_roots.tv }}" placeholder="/media/tv">
+      </div>
+      <div class="form-group">
+        <label for="anime_root">Anime root</label>
+        <input type="text" id="anime_root" name="anime_root"
+               value="{{ settings.media_roots.anime }}" placeholder="/media/anime">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Placement</h2>
+    <div class="form-group" style="max-width: 300px;">
+      <label for="placement_mode">Placement mode</label>
+      <select id="placement_mode" name="placement_mode">
+        <option value="move" {% if settings.placement_mode == "move" %}selected{% endif %}>move</option>
+        <option value="copy" {% if settings.placement_mode == "copy" %}selected{% endif %}>copy</option>
+        <option value="hardlink" {% if settings.placement_mode == "hardlink" %}selected{% endif %}>hardlink</option>
+      </select>
+      <p class="text-muted text-small mt-1">
+        <strong>move</strong> — files are moved from staging to library (default).<br>
+        <strong>copy</strong> — files are duplicated (uses more disk space).<br>
+        <strong>hardlink</strong> — requires source and destination to be on the same filesystem.
+      </p>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button type="submit" class="btn btn-primary">Save settings</button>
+  </div>
+</form>
+
+<div class="card" style="margin-top:2rem;">
+  <h2>Sonarr webhook setup</h2>
+  <p style="font-size:0.875rem; line-height:1.8;">
+    In Sonarr, go to <strong>Settings → Connect → Add Connection → Webhook</strong> and set:
+  </p>
+  <table style="font-size:0.83rem; margin-top:0.75rem;">
+    <tr><td class="text-muted" style="width:120px;">Triggers</td><td><strong>On Grab</strong> only</td></tr>
+    <tr><td class="text-muted">URL</td><td class="mono">http://parsarr:{{ settings.port }}/webhook/sonarr/grab</td></tr>
+    <tr><td class="text-muted">Method</td><td>POST</td></tr>
+  </table>
+  <p class="text-muted text-small mt-1">
+    Parsarr intercepts the release at grab time — before anything has been downloaded —
+    so it can reroute problematic releases before Sonarr gets first access to the raw files.
+  </p>
+</div>
+{% endblock %}

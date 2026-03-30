@@ -1,9 +1,13 @@
 """
-Pydantic models for Sonarr and Radarr webhook payloads.
+Pydantic models for Sonarr webhook payloads.
 
-Both apps send JSON bodies whose shape depends on the event type.  We model
-only the fields parsarr actually uses; extra fields are silently ignored via
-model_config extra='ignore'.
+Only the On Grab event is handled in v2.  Fields used by Parsarr:
+  - eventType   — must equal "Grab"
+  - downloadId  — the torrent hash
+  - series.id   — Sonarr series ID (used to look up the library path)
+  - release.title — human-readable release name (seed for auto-mapping)
+
+Extra fields are silently ignored via model_config extra='ignore'.
 """
 from __future__ import annotations
 
@@ -13,10 +17,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-# ---------------------------------------------------------------------------
-# Shared
-# ---------------------------------------------------------------------------
-
 class ArrEventType(str, Enum):
     GRAB = "Grab"
     DOWNLOAD = "Download"
@@ -24,9 +24,6 @@ class ArrEventType(str, Enum):
     SERIES_ADD = "SeriesAdd"
     SERIES_DELETE = "SeriesDelete"
     EPISODE_FILE_DELETE = "EpisodeFileDelete"
-    MOVIE_ADD = "MovieAdd"
-    MOVIE_DELETE = "MovieDelete"
-    MOVIE_FILE_DELETE = "MovieFileDelete"
     HEALTH = "Health"
     TEST = "Test"
     MANUAL_INTERACTION_REQUIRED = "ManualInteractionRequired"
@@ -40,72 +37,38 @@ class WebhookBase(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Sonarr
+# Sonarr On Grab
 # ---------------------------------------------------------------------------
 
-class SonarrEpisodeFile(BaseModel):
-    model_config = {"extra": "ignore"}
-
-    id: Optional[int] = None
-    relative_path: Optional[str] = Field(None, alias="relativePath")
-    path: Optional[str] = None
-    quality: Optional[str] = None
-
-
-class SonarrSeries(BaseModel):
+class SonarrGrabSeries(BaseModel):
     model_config = {"extra": "ignore"}
 
     id: int
     title: str
-    path: str
+    path: Optional[str] = None
     tvdb_id: Optional[int] = Field(None, alias="tvdbId")
     type: Optional[str] = None
 
 
-class SonarrEpisode(BaseModel):
+class SonarrGrabRelease(BaseModel):
     model_config = {"extra": "ignore"}
 
-    id: int
-    episode_number: int = Field(..., alias="episodeNumber")
-    season_number: int = Field(..., alias="seasonNumber")
-    title: str
+    title: str = ""
     quality: Optional[str] = None
+    size: Optional[int] = None
+    indexer: Optional[str] = None
 
 
-class SonarrWebhook(WebhookBase):
-    series: Optional[SonarrSeries] = None
-    episodes: list[SonarrEpisode] = Field(default_factory=list)
-    episode_file: Optional[SonarrEpisodeFile] = Field(None, alias="episodeFile")
-    is_upgrade: bool = Field(False, alias="isUpgrade")
+class SonarrGrabWebhook(WebhookBase):
+    """
+    Payload for Sonarr's 'On Grab' event.
+
+    Key fields Parsarr uses:
+      download_id  — torrent hash (primary key for qBittorrent lookups)
+      series.id    — Sonarr series ID
+      release.title — release name (auto-mapping seed)
+    """
     download_id: Optional[str] = Field(None, alias="downloadId")
     download_client: Optional[str] = Field(None, alias="downloadClient")
-
-
-# ---------------------------------------------------------------------------
-# Radarr
-# ---------------------------------------------------------------------------
-
-class RadarrMovieFile(BaseModel):
-    model_config = {"extra": "ignore"}
-
-    id: Optional[int] = None
-    relative_path: Optional[str] = Field(None, alias="relativePath")
-    path: Optional[str] = None
-    quality: Optional[str] = None
-
-
-class RadarrMovie(BaseModel):
-    model_config = {"extra": "ignore"}
-
-    id: int
-    title: str
-    file_path: Optional[str] = Field(None, alias="folderPath")
-    tmdb_id: Optional[int] = Field(None, alias="tmdbId")
-
-
-class RadarrWebhook(WebhookBase):
-    movie: Optional[RadarrMovie] = None
-    movie_file: Optional[RadarrMovieFile] = Field(None, alias="movieFile")
-    is_upgrade: bool = Field(False, alias="isUpgrade")
-    download_id: Optional[str] = Field(None, alias="downloadId")
-    download_client: Optional[str] = Field(None, alias="downloadClient")
+    series: Optional[SonarrGrabSeries] = None
+    release: SonarrGrabRelease = Field(default_factory=SonarrGrabRelease)

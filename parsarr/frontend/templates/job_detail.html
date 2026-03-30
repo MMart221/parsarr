@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Job #{{ job.id }} — parsarr{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-1 mb-1" style="flex-wrap:wrap;">
+  <a href="/" class="text-muted text-small">← Queue</a>
+  <span class="text-muted text-small">/</span>
+  <h1 style="margin:0;">Job #{{ job.id }}</h1>
+  <span id="state-badge" class="badge badge-{{ job.state }}">{{ job.state }}</span>
+  {% if job.hold %}<span class="badge badge-hold">hold</span>{% endif %}
+</div>
+
+<div id="job-id" data-id="{{ job.id }}" style="display:none;"></div>
+
+<p class="text-muted" style="margin-bottom:1.5rem;">{{ job.title }}</p>
+
+{% if job.error %}
+<div class="alert alert-danger">{{ job.error }}</div>
+{% endif %}
+
+{% if job.state == "passthrough" %}
+<div class="alert alert-info">
+  This release was classified as standard. It is being handled normally by Sonarr — Parsarr took no action.
+</div>
+{% endif %}
+
+<!-- Hold + Approve -->
+<div class="card">
+  <div class="card-header">
+    <h3 style="margin:0;">Hold &amp; Approval</h3>
+  </div>
+  <div class="flex items-center justify-between" style="flex-wrap:wrap; gap:1rem;">
+    <div class="toggle-wrap">
+      <label class="toggle">
+        <input type="checkbox" id="hold-toggle" {% if job.hold %}checked{% endif %}>
+        <span class="slider"></span>
+      </label>
+      <span>Hold before placement</span>
+      <span class="text-muted text-small">(off by default — Parsarr proceeds automatically)</span>
+    </div>
+    <button
+      id="approve-btn"
+      class="btn btn-success"
+      {% if not job.hold or job.state not in ("ready_to_process", "auto_mapped", "awaiting_manual_mapping") %}disabled{% endif %}
+    >
+      Approve &amp; Place
+    </button>
+  </div>
+  {% if not job.hold %}
+  <p class="text-muted text-small mt-1">Hold is off. Parsarr will place this release automatically when it is ready. Enable Hold to pause and review before placement.</p>
+  {% else %}
+  <p class="mt-1" style="color:var(--warning);">Hold is on. The job is paused. Review the mapping below, then click Approve &amp; Place to continue.</p>
+  {% endif %}
+</div>
+
+<!-- Mapping -->
+<div class="card">
+  <h3>Mapping</h3>
+  {% set mapping = job.mapping %}
+  {% if mapping %}
+  <div class="mapping-grid mb-1">
+    <div>
+      <div class="text-muted text-small">Series</div>
+      <div>{{ mapping.series_title or "—" }}</div>
+    </div>
+    <div>
+      <div class="text-muted text-small">Target path</div>
+      <div class="mono text-small">{{ job.target_path or "—" }}</div>
+    </div>
+    <div>
+      <div class="text-muted text-small">Seasons detected</div>
+      <div>{{ mapping.seasons_detected | join(", ") if mapping.seasons_detected else "—" }}</div>
+    </div>
+    <div>
+      <div class="text-muted text-small">Confidence</div>
+      <div>{{ "%.0f%%"|format(mapping.confidence * 100) if mapping.confidence is not none else "—" }}</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-warning">No mapping found. Use the form below to set one manually.</div>
+  {% endif %}
+
+  <hr>
+  <h3>Override mapping</h3>
+  <form id="mapping-form">
+    <div class="form-row">
+      <div class="form-group">
+        <label for="series-search">Series</label>
+        <input type="text" id="series-search" name="series_title"
+               list="series-list"
+               value="{{ mapping.series_title if mapping else '' }}"
+               placeholder="Search Sonarr library…">
+        <datalist id="series-list"></datalist>
+      </div>
+      <div class="form-group">
+        <label for="target-path">Target path (override)</label>
+        <input type="text" id="target-path" name="target_path"
+               value="{{ job.target_path or '' }}"
+               placeholder="/media/tv/Show Name (2020)">
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="seasons">Seasons (comma-separated, optional)</label>
+      <input type="text" id="seasons" name="seasons"
+             value="{{ mapping.seasons_detected | join(', ') if mapping and mapping.seasons_detected else '' }}"
+             placeholder="1, 2, 3">
+    </div>
+    <button type="submit" class="btn btn-primary">Update mapping</button>
+  </form>
+</div>
+
+<!-- File tree -->
+{% if job.file_tree %}
+<div class="card">
+  <h3>Detected file structure</h3>
+  <div class="file-tree">
+    {% for path in job.file_tree %}
+    {% set name = path.split("/")[-1] %}
+    {% set lower = name.lower() %}
+    {% set is_video = name.endswith((".mkv", ".mp4", ".avi", ".ts", ".m4v", ".wmv", ".mov")) %}
+    {% set is_companion = name.endswith((".srt", ".ass", ".sub", ".nfo", ".jpg", ".png")) %}
+    {% set is_extra = ("featurette" in lower or "behind" in lower or "commentary" in lower
+                       or "making" in lower or "bonus" in lower or "sample" in lower
+                       or "trailer" in lower or "interview" in lower or "extras" in path.lower()) %}
+    <div class="file-row">
+      {% if is_video and is_extra %}
+        <span class="tag tag-extra">EXTRA</span>
+      {% elif is_video %}
+        <span class="tag tag-episode">EPISODE</span>
+      {% elif is_companion %}
+        <span class="tag tag-companion">COMPANION</span>
+      {% else %}
+        <span class="tag tag-other">OTHER</span>
+      {% endif %}
+      <span class="mono">{{ path }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="text-muted text-small mt-1">File list from torrent metadata. Classification is a preview — actual classification runs on the downloaded files.</p>
+</div>
+{% endif %}
+
+<!-- Job metadata -->
+<div class="card">
+  <h3>Details</h3>
+  <table style="font-size:0.83rem;">
+    <tr><td class="text-muted" style="width:140px;">Hash</td><td class="mono">{{ job.hash }}</td></tr>
+    <tr><td class="text-muted">Placement mode</td><td>{{ job.placement_mode }}</td></tr>
+    <tr><td class="text-muted">Created</td><td>{{ job.created_at[:19].replace("T", " ") if job.created_at else "" }}</td></tr>
+    <tr><td class="text-muted">Updated</td><td>{{ job.updated_at[:19].replace("T", " ") if job.updated_at else "" }}</td></tr>
+  </table>
+</div>
+
+{% endblock %}

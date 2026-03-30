@@ -32,8 +32,7 @@ class ArrClient:
     async def get(self, path: str, **params: Any) -> Any:
         url = f"{self._base}{path}"
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = client.get(url, headers=self._headers, params=params)
-            resp = await resp if hasattr(resp, "__await__") else resp
+            resp = await client.get(url, headers=self._headers, params=params)
             resp.raise_for_status()
             return resp.json()
 

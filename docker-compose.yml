@@ -8,15 +8,21 @@ services:
     volumes:
       # Config file
       - ./config.yaml:/config/config.yaml:ro
-      # Staging area — must be accessible by Sonarr/Radarr too
-      - /data/staging:/data/staging
-      # If parsarr reorganises files before import, the source media path
-      # must also be mounted so it can read/move files.
-      - /data/downloads:/data/downloads
+      # Full media root — gives Parsarr access to:
+      #   /media/tv, /media/anime   (final library destinations)
+      #   /media/downloads/managed  (managed download area)
+      #   /media/staging            (work staging area)
+      # Replace /srv/media with your actual host media root.
+      - /srv/media:/media
+      # Persistent job database
+      - parsarr_data:/data
     environment:
       - PARSARR_LOG_LEVEL=INFO
     networks:
       - arr_network
+
+volumes:
+  parsarr_data:
 
 networks:
   arr_network:

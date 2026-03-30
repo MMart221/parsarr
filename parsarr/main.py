@@ -1,67 +1,124 @@
 """
-parsarr entry point.
+parsarr application factory.
 
-Running as a module:
-  python -m parsarr.main serve
-  python -m parsarr.main run /path/to/release
-  python -m parsarr.main test /path/to/release
-  python -m parsarr.main inspect /path/to/release
-
-The FastAPI `app` object is also importable by uvicorn:
+Uvicorn entry point:
   uvicorn parsarr.main:app
+
+CLI entry point:
+  python -m parsarr.main serve
 """
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from . import __version__
 from .config import load_settings
-from .webhook.routes import router as webhook_router
+from .jobs import JobStore
 
 logger = logging.getLogger(__name__)
 
+_TEMPLATES_DIR = Path(__file__).parent / "frontend" / "templates"
+_STATIC_DIR = Path(__file__).parent / "frontend" / "static"
+
+templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
 
 def create_app() -> FastAPI:
-    """Factory used by uvicorn and tests alike."""
     import parsarr.config as _cfg
 
     _cfg.settings = load_settings()
+    s = _cfg.settings
 
     logging.basicConfig(
         format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-        level=getattr(logging, _cfg.settings.log_level.upper(), logging.INFO),
+        level=getattr(logging, s.log_level.upper(), logging.INFO),
     )
 
-    application = FastAPI(
+    app = FastAPI(
         title="parsarr",
-        description=(
-            "Webhook-driven *arr-stack file parser — cleans multi-season packs "
-            "and messy releases so Sonarr, Radarr, and Jellyfin can ingest them."
-        ),
+        description="TV/anime intake and import preprocessor for the *arr stack.",
         version=__version__,
+        docs_url="/api/docs",
+        redoc_url=None,
     )
 
-    application.include_router(webhook_router)
+    # ------------------------------------------------------------------
+    # Job store
+    # ------------------------------------------------------------------
+    db = JobStore(s.db_path)
+    from .api.routes import init_job_store
+    init_job_store(db)
 
-    @application.exception_handler(Exception)
-    async def generic_exception_handler(request, exc):
+    # ------------------------------------------------------------------
+    # API + webhook routes
+    # ------------------------------------------------------------------
+    from .api.routes import router as api_router
+    app.include_router(api_router)
+
+    # ------------------------------------------------------------------
+    # Static files
+    # ------------------------------------------------------------------
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+    # ------------------------------------------------------------------
+    # Frontend page routes
+    # ------------------------------------------------------------------
+
+    @app.get("/", response_class=HTMLResponse)
+    async def queue_page(request: Request):
+        jobs = db.list_jobs(limit=200)
+        return templates.TemplateResponse(
+            "queue.html",
+            {"request": request, "jobs": jobs, "active": "queue"},
+        )
+
+    @app.get("/add", response_class=HTMLResponse)
+    async def add_page(request: Request):
+        return templates.TemplateResponse(
+            "add.html",
+            {"request": request, "active": "add"},
+        )
+
+    @app.get("/settings", response_class=HTMLResponse)
+    async def settings_page(request: Request):
+        return templates.TemplateResponse(
+            "settings.html",
+            {"request": request, "settings": s, "active": "settings"},
+        )
+
+    @app.get("/jobs/{job_id}", response_class=HTMLResponse)
+    async def job_detail_page(request: Request, job_id: int):
+        job = db.get_job(job_id)
+        if not job:
+            return HTMLResponse(content="<h1>404 — Job not found</h1>", status_code=404)
+        return templates.TemplateResponse(
+            "job_detail.html",
+            {"request": request, "job": job, "active": "queue"},
+        )
+
+    # ------------------------------------------------------------------
+    # Generic exception handler
+    # ------------------------------------------------------------------
+
+    @app.exception_handler(Exception)
+    async def generic_exception_handler(request: Request, exc: Exception):
         logger.exception("Unhandled exception: %s", exc)
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal server error"},
         )
 
-    return application
+    return app
 
 
-# Module-level app instance — used by uvicorn and when imported directly.
 app = create_app()
-
 
 if __name__ == "__main__":
     from .cli import cli
-
     cli()

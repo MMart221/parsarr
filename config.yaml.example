@@ -2,34 +2,46 @@
 # Copy this file to config.yaml and fill in your values.
 # config.yaml is gitignored and should never be committed.
 
-# Directory where parsarr stages reorganized files before import.
-# This path must be readable and writable by parsarr, Sonarr, and Radarr.
-staging_dir: /data/staging
-
 sonarr:
   url: http://sonarr:8989
   api_key: YOUR_SONARR_API_KEY   # Sonarr → Settings → General → API Key
 
-radarr:
-  url: http://radarr:7878
-  api_key: YOUR_RADARR_API_KEY   # Radarr → Settings → General → API Key
+qbittorrent:
+  url: http://qbittorrent:8080
+  username: admin
+  password: adminadmin
 
-# Optional webhook secret.
-# If set, parsarr validates incoming requests against the X-Parsarr-Secret header.
-# Set the same value in your Sonarr/Radarr webhook connection settings.
+# qBittorrent category Parsarr uses for rerouted and manual torrents.
+# Create this category in qBittorrent first.
+# Sonarr must NOT be configured to auto-import from this category.
+parsarr_category: parsarr-managed
+
+# Where qBittorrent downloads problematic releases while Parsarr owns them.
+# Sonarr never sees this directory.
+managed_download_dir: /media/downloads/managed
+
+# Parsarr's temporary work area for reorganizing files before final placement.
+staging_dir: /media/staging
+
+# Final library destinations. Parsarr places cleaned files directly here.
+media_roots:
+  tv: /media/tv
+  anime: /media/anime
+
+# How Parsarr moves cleaned files into the final library path.
+# Allowed values: move, copy, hardlink
+placement_mode: move
+
+# Path to the SQLite database for job tracking.
+db_path: /data/parsarr.db
+
+# Optional webhook secret — set the same value in Sonarr's webhook connection.
 webhook_secret: ""
 
-# Python log level: DEBUG, INFO, WARNING, ERROR
 log_level: INFO
-
-# Port the webhook server listens on
 port: 8080
 
-# Bonus-content detection patterns.
-# Any video file whose name contains one of these strings (case-insensitive)
-# is classified as an extra and moved to _extras/ instead of a Season folder.
-# These are merged with the built-in pattern list — you don't need to repeat
-# the defaults here unless you want to override the entire list.
-#
+# Additional bonus-content detection patterns (case-insensitive substring match).
+# The built-in list is always active. Add custom patterns here if needed.
 # extra_patterns:
 #   - "my custom pattern"
