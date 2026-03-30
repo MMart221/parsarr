@@ -185,15 +185,11 @@ async def update_mapping(job_id: int, body: MappingUpdate) -> dict:
 
     # Update sonarr_series_id in the job row if provided
     if body.series_id:
-        db._lock.acquire()
-        try:
-            with db._connect() as conn:
-                conn.execute(
-                    "UPDATE jobs SET sonarr_series_id=? WHERE id=?",
-                    (body.series_id, job_id),
-                )
-        finally:
-            db._lock.release()
+        with db._connect() as conn:
+            conn.execute(
+                "UPDATE jobs SET sonarr_series_id=? WHERE id=?",
+                (body.series_id, job_id),
+            )
 
     result = await db.update_job_mapping(job_id, updated, target)
     if result:

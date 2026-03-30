@@ -11,7 +11,6 @@ import asyncio
 import json
 import logging
 import sqlite3
-import threading
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -160,17 +159,20 @@ class JobStore:
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._lock = threading.Lock()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+        conn = sqlite3.connect(str(self._db_path), check_same_thread=False, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
     def _init_db(self) -> None:
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
+            # Set WAL mode once here; it persists on the database file for all
+            # subsequent connections and does not need to be repeated per-call.
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_DDL)
 
     # ------------------------------------------------------------------
@@ -186,7 +188,7 @@ class JobStore:
         state: str = JobState.SUBMITTED,
     ) -> Job:
         now = _now()
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO jobs (hash, title, sonarr_series_id, state,
@@ -195,7 +197,11 @@ class JobStore:
                 """,
                 (hash, title, sonarr_series_id, state, placement_mode, now, now),
             )
-            return self._sync_get_job(cur.lastrowid)  # type: ignore[arg-type]
+            job_id = cur.lastrowid
+        # `with conn:` has now committed the INSERT. Read it on a fresh
+        # connection — this must happen OUTSIDE the write transaction or the
+        # new connection would see the row as uncommitted (WAL isolation).
+        return self._sync_get_job(job_id)  # type: ignore[arg-type]
 
     def _sync_update_job_state(
         self,
@@ -204,7 +210,7 @@ class JobStore:
         error: Optional[str] = None,
     ) -> Optional[Job]:
         now = _now()
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             conn.execute(
                 "UPDATE jobs SET state=?, error=?, updated_at=? WHERE id=?",
                 (state, error, now, job_id),
@@ -218,7 +224,7 @@ class JobStore:
         target_path: Optional[str] = None,
     ) -> Optional[Job]:
         now = _now()
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             conn.execute(
                 """
                 UPDATE jobs
@@ -231,7 +237,7 @@ class JobStore:
 
     def _sync_update_file_tree(self, job_id: int, file_tree: list) -> Optional[Job]:
         now = _now()
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             conn.execute(
                 "UPDATE jobs SET file_tree_json=?, updated_at=? WHERE id=?",
                 (json.dumps(file_tree), now, job_id),
@@ -240,7 +246,7 @@ class JobStore:
 
     def _sync_set_hold(self, job_id: int, hold: bool) -> Optional[Job]:
         now = _now()
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             conn.execute(
                 "UPDATE jobs SET hold=?, updated_at=? WHERE id=?",
                 (int(hold), now, job_id),
@@ -249,7 +255,7 @@ class JobStore:
 
     def _sync_set_target_path(self, job_id: int, target_path: str) -> Optional[Job]:
         now = _now()
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             conn.execute(
                 "UPDATE jobs SET target_path=?, updated_at=? WHERE id=?",
                 (target_path, now, job_id),
@@ -261,14 +267,14 @@ class JobStore:
     # ------------------------------------------------------------------
 
     def _sync_get_job(self, job_id: int) -> Optional[Job]:
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM jobs WHERE id=?", (job_id,)
             ).fetchone()
             return _row_to_job(tuple(row)) if row else None
 
     def _sync_get_job_by_hash(self, hash: str) -> Optional[Job]:
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM jobs WHERE hash=? ORDER BY id DESC LIMIT 1",
                 (hash,),
@@ -276,7 +282,7 @@ class JobStore:
             return _row_to_job(tuple(row)) if row else None
 
     def _sync_list_jobs(self, limit: int = 200, offset: int = 0) -> list[Job]:
-        with self._lock, self._connect() as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM jobs ORDER BY id DESC LIMIT ? OFFSET ?",
                 (limit, offset),
