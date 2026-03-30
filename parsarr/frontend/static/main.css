@@ -45,13 +45,18 @@ nav {
 }
 
 nav .brand {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text);
   padding: 0 1.25rem 1rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.5rem;
-  letter-spacing: 0.02em;
+}
+
+nav .brand-logo {
+  display: block;
+  max-width: 100%;
+  max-height: 2.25rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
 }
 
 nav a {
@@ -187,11 +192,12 @@ textarea { resize: vertical; min-height: 80px; }
   gap: 0.5rem;
   padding: 0.1rem 0;
 }
-.tag { font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 3px; }
+.tag { font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 3px; flex-shrink: 0; }
 .tag-episode { background: #1a3a5c; color: var(--info); }
 .tag-extra { background: #3d2a00; color: var(--warning); }
 .tag-companion { background: #2a3d1a; color: #8dc97d; }
 .tag-other { background: var(--surface); color: var(--text-muted); }
+.tag-season { background: #2a1a4a; color: #b388ff; }
 
 /* Alerts */
 .alert {
@@ -244,6 +250,9 @@ textarea { resize: vertical; min-height: 80px; }
 }
 .toggle input:checked + .slider { background: var(--warning); }
 .toggle input:checked + .slider::before { transform: translateX(18px); }
+
+/* Hold hint states */
+.hold-on { color: var(--warning); }
 
 /* Misc */
 .text-muted { color: var(--text-muted); }

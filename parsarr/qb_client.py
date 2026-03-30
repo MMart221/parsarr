@@ -177,6 +177,14 @@ class QBittorrentClient:
     async def resume_torrent(self, torrent_hash: str) -> None:
         await self._post("/api/v2/torrents/resume", {"hashes": torrent_hash.lower()})
 
+    async def remove_torrent(self, torrent_hash: str, delete_files: bool = False) -> None:
+        """Remove a torrent from qBittorrent, optionally deleting downloaded files."""
+        await self._post(
+            "/api/v2/torrents/delete",
+            {"hashes": torrent_hash.lower(), "deleteFiles": "true" if delete_files else "false"},
+        )
+        logger.info("Removed torrent %s (deleteFiles=%s)", torrent_hash[:8], delete_files)
+
     # ------------------------------------------------------------------
     # Polling helpers
     # ------------------------------------------------------------------

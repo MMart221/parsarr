@@ -7,7 +7,7 @@
   <span class="text-muted text-small">/</span>
   <h1 style="margin:0;">Job #{{ job.id }}</h1>
   <span id="state-badge" class="badge badge-{{ job.state }}">{{ job.state }}</span>
-  {% if job.hold %}<span class="badge badge-hold">hold</span>{% endif %}
+  <span id="hold-badge" class="badge badge-hold" {% if not job.hold %}style="display:none"{% endif %}>hold</span>
 </div>
 
 <div id="job-id" data-id="{{ job.id }}" style="display:none;"></div>
@@ -46,11 +46,13 @@
       Approve &amp; Place
     </button>
   </div>
-  {% if not job.hold %}
-  <p class="text-muted text-small mt-1">Hold is off. Parsarr will place this release automatically when it is ready. Enable Hold to pause and review before placement.</p>
-  {% else %}
-  <p class="mt-1" style="color:var(--warning);">Hold is on. The job is paused. Review the mapping below, then click Approve &amp; Place to continue.</p>
-  {% endif %}
+  <p id="hold-hint" class="text-small mt-1 {% if job.hold %}hold-on{% else %}text-muted{% endif %}">
+    {% if not job.hold %}
+    Hold is off. Parsarr will place this release automatically when it is ready. Enable Hold to pause and review before placement.
+    {% else %}
+    Hold is on. The job is paused. Review the mapping below, then click Approve &amp; Place to continue.
+    {% endif %}
+  </p>
 </div>
 
 <!-- Mapping -->
@@ -109,38 +111,71 @@
   </form>
 </div>
 
-<!-- File tree -->
-{% if job.file_tree %}
+<!-- File classification preview -->
+{% if profile %}
 <div class="card">
-  <h3>Detected file structure</h3>
+  <div class="flex items-center justify-between mb-1" style="flex-wrap:wrap; gap:0.5rem;">
+    <h3 style="margin:0;">File Classification Preview</h3>
+    <div class="flex gap-1 text-small text-muted" style="flex-wrap:wrap;">
+      <span>{{ profile.episode_files | length }} episode(s)</span>
+      <span>·</span>
+      <span>{{ profile.extra_files | length }} extra(s)</span>
+      <span>·</span>
+      <span>{{ profile.companion_files | length }} companion(s)</span>
+      {% if profile.seasons_found %}
+      <span>·</span>
+      <span>Season(s): {{ profile.seasons_found | sort | join(", ") }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if profile.is_standard %}
+  <div class="alert alert-success" style="margin-bottom:0.75rem;">
+    Standard release — Parsarr will pass through without action.
+  </div>
+  {% else %}
+  <div class="alert alert-info" style="margin-bottom:0.75rem;">
+    Non-standard release — will be rerouted:
+    {% set reasons = [] %}
+    {% if profile.is_multi_season %}{% set _ = reasons.append("multi-season pack") %}{% endif %}
+    {% if profile.has_extras %}{% set _ = reasons.append("contains extras") %}{% endif %}
+    {% if profile.needs_flatten %}{% set _ = reasons.append("nested structure") %}{% endif %}
+    {{ reasons | join(", ") or "classified as problematic" }}.
+    Use Hold to review before placement.
+  </div>
+  {% endif %}
+
   <div class="file-tree">
-    {% for path in job.file_tree %}
-    {% set name = path.split("/")[-1] %}
-    {% set lower = name.lower() %}
-    {% set is_video = name.endswith((".mkv", ".mp4", ".avi", ".ts", ".m4v", ".wmv", ".mov")) %}
-    {% set is_companion = name.endswith((".srt", ".ass", ".sub", ".nfo", ".jpg", ".png")) %}
-    {% set is_extra = ("featurette" in lower or "behind" in lower or "commentary" in lower
-                       or "making" in lower or "bonus" in lower or "sample" in lower
-                       or "trailer" in lower or "interview" in lower or "extras" in path.lower()) %}
+    {% for fi in profile.files %}
+    {% set path_str = fi.path | string %}
     <div class="file-row">
-      {% if is_video and is_extra %}
+      {% if fi.is_video and fi.is_extra %}
         <span class="tag tag-extra">EXTRA</span>
-      {% elif is_video %}
+      {% elif fi.is_video %}
         <span class="tag tag-episode">EPISODE</span>
-      {% elif is_companion %}
+      {% elif fi.is_companion and fi.is_extra %}
+        <span class="tag tag-extra">EXTRA</span>
+      {% elif fi.is_companion %}
         <span class="tag tag-companion">COMPANION</span>
       {% else %}
         <span class="tag tag-other">OTHER</span>
       {% endif %}
-      <span class="mono">{{ path }}</span>
+      {% if fi.season is not none %}
+        <span class="tag tag-season">S{{ "%02d" | format(fi.season) }}</span>
+      {% endif %}
+      <span class="mono">{{ path_str }}</span>
     </div>
     {% endfor %}
   </div>
-  <p class="text-muted text-small mt-1">File list from torrent metadata. Classification is a preview — actual classification runs on the downloaded files.</p>
+
+  <p class="text-muted text-small mt-1">
+    Classification from torrent metadata — reflects what Parsarr will do.
+    Enable <strong>Hold</strong> above and update the mapping if anything looks wrong, then click Approve &amp; Place.
+  </p>
 </div>
 {% endif %}
 
-<!-- Job metadata -->
+<!-- Job metadata + danger zone -->
 <div class="card">
   <h3>Details</h3>
   <table style="font-size:0.83rem;">
@@ -149,6 +184,17 @@
     <tr><td class="text-muted">Created</td><td>{{ job.created_at[:19].replace("T", " ") if job.created_at else "" }}</td></tr>
     <tr><td class="text-muted">Updated</td><td>{{ job.updated_at[:19].replace("T", " ") if job.updated_at else "" }}</td></tr>
   </table>
+  <div style="margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--border);">
+    <h3 style="color:var(--danger); margin-bottom:0.5rem;">Danger zone</h3>
+    <div class="flex gap-1" style="flex-wrap:wrap;">
+      <button id="delete-btn" class="btn btn-danger">Delete job</button>
+      <button id="delete-files-btn" class="btn btn-danger" style="opacity:0.75;">Delete job + files</button>
+    </div>
+    <p class="text-muted text-small mt-1">
+      "Delete job" removes the record and the torrent from qBittorrent (keeps downloaded files on disk).
+      "Delete job + files" also deletes the downloaded data.
+    </p>
+  </div>
 </div>
 
 {% endblock %}

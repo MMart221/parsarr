@@ -336,6 +336,41 @@ async def add_magnet(body: AddRequest, background_tasks: BackgroundTasks) -> dic
 
 
 # ---------------------------------------------------------------------------
+# Job deletion
+# ---------------------------------------------------------------------------
+
+@router.delete("/api/jobs/{job_id}")
+async def delete_job(job_id: int, delete_files: bool = False) -> dict:
+    """
+    Delete a job and optionally remove the torrent (and its files) from qBittorrent.
+
+    Pass ``?delete_files=true`` to also delete the downloaded data from disk.
+    The torrent removal is best-effort — the job is deleted even if qBittorrent
+    is unreachable.
+    """
+    db = _get_db()
+    job = await db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.hash:
+        from ..qb_client import QBittorrentClient
+        s = _cfg_module.settings
+        try:
+            qb = QBittorrentClient(
+                url=s.qbittorrent.url,
+                username=s.qbittorrent.username,
+                password=s.qbittorrent.password,
+            )
+            await qb.remove_torrent(job.hash, delete_files=delete_files)
+        except Exception as exc:
+            logger.warning("Could not remove torrent %s from qBittorrent: %s", job.hash[:8], exc)
+
+    await db.delete_job(job_id)
+    return {"status": "deleted", "job_id": job_id}
+
+
+# ---------------------------------------------------------------------------
 # Sonarr series proxy
 # ---------------------------------------------------------------------------
 

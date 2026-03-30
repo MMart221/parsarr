@@ -32,7 +32,7 @@ function showToast(msg, type = "info") {
 }
 
 // ---------------------------------------------------------------------------
-// Queue page — auto-refresh every 10 s
+// Queue page — auto-refresh every 10 s + per-row delete
 // ---------------------------------------------------------------------------
 
 function initQueue() {
@@ -45,18 +45,39 @@ function initQueue() {
       const tbody = table.querySelector("tbody");
       if (!tbody) return;
       tbody.innerHTML = jobs.map(renderJobRow).join("");
+      bindQueueDeleteButtons(tbody);
     } catch (e) {
       console.warn("Queue refresh failed:", e);
     }
   }
 
+  // Bind delete buttons on initial server-rendered rows
+  bindQueueDeleteButtons(table.querySelector("tbody"));
+
   setInterval(refresh, 10000);
 }
 
+function bindQueueDeleteButtons(container) {
+  if (!container) return;
+  container.querySelectorAll(".btn-delete-job").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const jobId = btn.dataset.id;
+      if (!confirm(`Delete job #${jobId}? The torrent will be removed from qBittorrent (downloaded files kept).`)) return;
+      try {
+        await api("DELETE", `/api/jobs/${jobId}`);
+        const row = btn.closest("tr");
+        if (row) row.remove();
+        showToast(`Job #${jobId} deleted`, "success");
+      } catch (e) {
+        showToast("Delete failed: " + e.message, "danger");
+      }
+    });
+  });
+}
+
 function renderJobRow(job) {
-  const holdBadge = job.hold
-    ? `<span class="badge badge-hold">hold</span>`
-    : "";
+  const holdBadge = job.hold ? `<span class="badge badge-hold">hold</span>` : "";
   const dt = job.updated_at ? job.updated_at.slice(0, 16).replace("T", " ") : "";
   return `<tr>
     <td><a class="table-link" href="/jobs/${job.id}">#${job.id}</a></td>
@@ -64,6 +85,7 @@ function renderJobRow(job) {
     <td><span class="badge badge-${job.state}">${job.state}</span> ${holdBadge}</td>
     <td class="text-muted text-small mono">${job.hash ? job.hash.slice(0, 8) : ""}</td>
     <td class="text-muted text-small">${dt}</td>
+    <td><button class="btn btn-ghost btn-delete-job text-small" data-id="${job.id}" style="padding:0.25rem 0.5rem;color:var(--danger);">✕</button></td>
   </tr>`;
 }
 
@@ -77,20 +99,45 @@ function initJobDetail() {
 
   // Hold toggle
   const holdToggle = document.getElementById("hold-toggle");
+  const holdBadge  = document.getElementById("hold-badge");
+  const holdHint   = document.getElementById("hold-hint");
+  const approveBtn = document.getElementById("approve-btn");
+
+  function updateHoldUI(held) {
+    if (holdBadge) {
+      holdBadge.style.display = held ? "" : "none";
+    }
+    if (holdHint) {
+      if (held) {
+        holdHint.className = "text-small mt-1 hold-on";
+        holdHint.textContent = "Hold is on. The job is paused. Review the mapping below, then click Approve & Place to continue.";
+      } else {
+        holdHint.className = "text-small mt-1 text-muted";
+        holdHint.textContent = "Hold is off. Parsarr will place this release automatically when it is ready. Enable Hold to pause and review before placement.";
+      }
+    }
+    if (approveBtn) {
+      const stateBadge = document.getElementById("state-badge");
+      const state = stateBadge ? stateBadge.textContent.trim() : "";
+      approveBtn.disabled = !held || !["ready_to_process", "auto_mapped", "awaiting_manual_mapping"].includes(state);
+    }
+  }
+
   if (holdToggle) {
     holdToggle.addEventListener("change", async () => {
+      const held = holdToggle.checked;
       try {
-        await api("PATCH", `/api/jobs/${jobId}/hold`, { hold: holdToggle.checked });
-        showToast(holdToggle.checked ? "Hold enabled" : "Hold disabled", "info");
+        await api("PATCH", `/api/jobs/${jobId}/hold`, { hold: held });
+        showToast(held ? "Hold enabled" : "Hold disabled", "info");
+        updateHoldUI(held);
       } catch (e) {
         showToast("Failed to update hold: " + e.message, "danger");
-        holdToggle.checked = !holdToggle.checked;
+        holdToggle.checked = !held;
       }
     });
   }
 
   // Approve button
-  const approveBtn = document.getElementById("approve-btn");
   if (approveBtn) {
     approveBtn.addEventListener("click", async () => {
       approveBtn.disabled = true;
@@ -105,10 +152,32 @@ function initJobDetail() {
     });
   }
 
+  // Delete buttons
+  document.getElementById("delete-btn")?.addEventListener("click", async () => {
+    if (!confirm("Delete this job? The torrent will be removed from qBittorrent (downloaded files kept on disk).")) return;
+    try {
+      await api("DELETE", `/api/jobs/${jobId}`);
+      showToast("Job deleted", "success");
+      setTimeout(() => { window.location.href = "/"; }, 800);
+    } catch (e) {
+      showToast("Delete failed: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("delete-files-btn")?.addEventListener("click", async () => {
+    if (!confirm("Delete this job AND its downloaded files? This cannot be undone.")) return;
+    try {
+      await api("DELETE", `/api/jobs/${jobId}?delete_files=true`);
+      showToast("Job and files deleted", "success");
+      setTimeout(() => { window.location.href = "/"; }, 800);
+    } catch (e) {
+      showToast("Delete failed: " + e.message, "danger");
+    }
+  });
+
   // Mapping form
   const mappingForm = document.getElementById("mapping-form");
   if (mappingForm) {
-    // Series search
     const seriesSearch = document.getElementById("series-search");
     const seriesList = document.getElementById("series-list");
     if (seriesSearch && seriesList) {
@@ -154,7 +223,7 @@ function initJobDetail() {
     });
   }
 
-  // Auto-refresh state badge every 8 s
+  // Auto-refresh state badge + hold state every 8 s
   const stateBadge = document.getElementById("state-badge");
   if (stateBadge) {
     setInterval(async () => {
@@ -162,9 +231,12 @@ function initJobDetail() {
         const job = await api("GET", `/api/jobs/${jobId}`);
         stateBadge.className = `badge badge-${job.state}`;
         stateBadge.textContent = job.state;
-        const approveBtn = document.getElementById("approve-btn");
+        if (holdToggle && holdToggle.checked !== job.hold) {
+          holdToggle.checked = job.hold;
+          updateHoldUI(job.hold);
+        }
         if (approveBtn) {
-          approveBtn.disabled = !job.hold || !["ready_to_process","auto_mapped","awaiting_manual_mapping"].includes(job.state);
+          approveBtn.disabled = !job.hold || !["ready_to_process", "auto_mapped", "awaiting_manual_mapping"].includes(job.state);
         }
       } catch (_) {}
     }, 8000);
@@ -179,7 +251,6 @@ function initAdd() {
   const form = document.getElementById("add-form");
   if (!form) return;
 
-  // Load series into datalist on page load
   const seriesDatalist = document.getElementById("series-options");
   if (seriesDatalist) {
     api("GET", "/api/series").then(results => {

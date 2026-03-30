@@ -16,6 +16,7 @@
         <th>State</th>
         <th>Hash</th>
         <th>Updated</th>
+        <th style="width:60px;"></th>
       </tr>
     </thead>
     <tbody>
@@ -29,6 +30,10 @@
         </td>
         <td class="text-muted text-small mono">{{ job.hash[:8] if job.hash else "" }}</td>
         <td class="text-muted text-small">{{ job.updated_at[:16].replace("T", " ") if job.updated_at else "" }}</td>
+        <td>
+          <button class="btn btn-ghost btn-delete-job text-small"
+                  data-id="{{ job.id }}" style="padding:0.25rem 0.5rem; color:var(--danger);">✕</button>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

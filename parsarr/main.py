@@ -97,13 +97,19 @@ def create_app() -> FastAPI:
 
     @app.get("/jobs/{job_id}", response_class=HTMLResponse)
     async def job_detail_page(request: Request, job_id: int):
-        job = db.get_job(job_id)
+        from .core.inspector import classify_tree
+        import parsarr.config as _cfg
+
+        job = await db.get_job(job_id)
         if not job:
             return HTMLResponse(content="<h1>404 — Job not found</h1>", status_code=404)
+        profile = None
+        if job.file_tree:
+            profile = classify_tree(job.file_tree, extra_patterns=_cfg.settings.extra_patterns)
         return templates.TemplateResponse(
             request,
             "job_detail.html",
-            {"job": job, "active": "queue"},
+            {"job": job, "active": "queue", "profile": profile},
         )
 
     # ------------------------------------------------------------------

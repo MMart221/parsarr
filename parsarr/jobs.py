@@ -281,6 +281,11 @@ class JobStore:
             ).fetchone()
             return _row_to_job(tuple(row)) if row else None
 
+    def _sync_delete_job(self, job_id: int) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+            return cur.rowcount > 0
+
     def _sync_list_jobs(self, limit: int = 200, offset: int = 0) -> list[Job]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -340,6 +345,9 @@ class JobStore:
 
     async def get_job_by_hash(self, hash: str) -> Optional[Job]:
         return await asyncio.to_thread(self._sync_get_job_by_hash, hash)
+
+    async def delete_job(self, job_id: int) -> bool:
+        return await asyncio.to_thread(self._sync_delete_job, job_id)
 
     async def list_jobs(self, limit: int = 200, offset: int = 0) -> list[Job]:
         return await asyncio.to_thread(self._sync_list_jobs, limit, offset)
