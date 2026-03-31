@@ -290,7 +290,7 @@ parsarr/
 
 ## Project status
 
-Parsarr is a personal project built to solve a specific workflow problem. It is public in case others find it useful. Pull requests and forks are welcome.
+Parsarr is a personal project built to solve a specific workflow problem. It is public in case others find it useful. Pull requests and forks are welcome. I might work on it in the future, but probably infrequently. 
 
 
 
