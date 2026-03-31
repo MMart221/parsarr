@@ -100,9 +100,23 @@
   </p>
   <table style="font-size:0.83rem; margin-top:0.75rem;">
     <tr><td class="text-muted" style="width:120px;">Triggers</td><td><strong>On Grab</strong> only</td></tr>
-    <tr><td class="text-muted">URL</td><td class="mono">{{ request.base_url }}webhook/sonarr/grab</td></tr>
     <tr><td class="text-muted">Method</td><td>POST</td></tr>
   </table>
+  <p class="text-muted text-small mt-2" style="line-height:1.7;">
+    <strong>URL</strong> — use the base address <strong>Sonarr</strong> can use to reach Parsarr (from Sonarr’s network view, which may differ from your browser).
+  </p>
+  <ul style="font-size:0.83rem; margin:0.5rem 0 0 1.25rem; line-height:1.8;">
+    <li>
+      <strong>Typical Docker (same compose/network as Parsarr):</strong><br>
+      <code class="mono">http://parsarr:{{ settings.port }}/webhook/sonarr/grab</code>
+      <span class="text-muted"> — <code>parsarr</code> is the service/container name; port is Parsarr’s listen port inside the container.</span>
+    </li>
+    <li class="mt-1">
+      <strong>Otherwise:</strong><br>
+      <code class="mono">http://&lt;host&gt;:&lt;port&gt;/webhook/sonarr/grab</code>
+      <span class="text-muted"> — replace with whatever hostname or IP and port Sonarr should use to reach Parsarr (no single value fits every setup).</span>
+    </li>
+  </ul>
   <p class="text-muted text-small mt-1">
     Parsarr intercepts the release at grab time — before anything has been downloaded —
     so it can reroute problematic releases before Sonarr gets first access to the raw files.
