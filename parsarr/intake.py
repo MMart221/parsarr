@@ -25,7 +25,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from .config import Settings
+from .config import Settings, remap_sonarr_path
 from .core.inspector import classify_tree
 from .jobs import Job, JobState, JobStore
 from .mapper import auto_map
@@ -134,7 +134,7 @@ async def handle_grab(
         # Sonarr-originated: we already know the series; fetch its path directly
         try:
             series = await sonarr.get_series_by_id(sonarr_series_id)
-            target_path = series.get("path", "")
+            target_path = remap_sonarr_path(series.get("path", ""), settings.path_maps)
             mapping_result_dict = {
                 "series_id": sonarr_series_id,
                 "series_title": series.get("title", release_title),
@@ -164,7 +164,9 @@ async def handle_grab(
                 "confidence": mapping_result.confidence,
                 "source": "auto_map",
             }
-            await jobs_db.update_job_mapping(job.id, mapping_dict, mapping_result.target_path)
+            remapped_path = remap_sonarr_path(mapping_result.target_path, settings.path_maps)
+            mapping_dict["target_path"] = remapped_path
+            await jobs_db.update_job_mapping(job.id, mapping_dict, remapped_path)
             await jobs_db.update_job_state(job.id, JobState.AUTO_MAPPED)
             logger.info(
                 "Job %d: auto-mapped to %r (confidence=%.2f)",

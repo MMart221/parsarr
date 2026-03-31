@@ -40,6 +40,29 @@ class MediaRoots(BaseModel):
     anime: Path = Path("/media/anime")
 
 
+class PathMapping(BaseModel):
+    """Maps a path prefix as Sonarr reports it to the equivalent local path."""
+    sonarr: str   # e.g. "/tv"
+    local: str    # e.g. "/srv/media/tv"
+
+
+def remap_sonarr_path(path: str, path_maps: list[PathMapping]) -> str:
+    """
+    Translate a Sonarr-reported path to its local equivalent.
+
+    Iterates path_maps in order and replaces the first matching prefix.
+    Returns the path unchanged if no mapping applies.
+    """
+    for mapping in path_maps:
+        prefix = mapping.sonarr.rstrip("/")
+        if not prefix:
+            continue
+        if path == prefix or path.startswith(prefix + "/"):
+            suffix = path[len(prefix):]
+            return mapping.local.rstrip("/") + suffix
+    return path
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="PARSARR_",
@@ -63,6 +86,7 @@ class Settings(BaseSettings):
     staging_dir: Path = Path("/media/staging")
 
     media_roots: MediaRoots = MediaRoots()
+    path_maps: list[PathMapping] = []
     db_path: Path = Path("/data/parsarr.db")
 
     # How Parsarr moves cleaned files into the final library path.

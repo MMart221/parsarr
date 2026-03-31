@@ -257,7 +257,7 @@ async def _fire_placement(job_id: int) -> None:
     try:
         s = _cfg_module.settings
         sonarr = SonarrClient(base_url=s.sonarr.url, api_key=s.sonarr.api_key)
-        job = db.get_job(job_id)
+        job = await db.get_job(job_id)
         if not job:
             return
         await place_job(job, s, sonarr, db)
@@ -414,6 +414,7 @@ class SettingsUpdate(BaseModel):
     anime_root: Optional[str] = None
     placement_mode: Optional[str] = None
     parsarr_category: Optional[str] = None
+    path_maps: Optional[str] = None  # one "sonarr_prefix:local_prefix" per line
 
 
 @router.post("/settings")
@@ -445,6 +446,17 @@ async def save_settings(body: SettingsUpdate) -> dict:
         s.placement_mode = body.placement_mode
     if body.parsarr_category is not None:
         s.parsarr_category = body.parsarr_category
+    if body.path_maps is not None:
+        from ..config import PathMapping
+        new_maps = []
+        for line in body.path_maps.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(":", 1)
+            if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+                new_maps.append(PathMapping(sonarr=parts[0].strip(), local=parts[1].strip()))
+        s.path_maps = new_maps
 
     return {"status": "ok"}
 

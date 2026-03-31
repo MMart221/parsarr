@@ -88,6 +88,22 @@
     </div>
   </div>
 
+  <div class="card">
+    <h2>Path maps</h2>
+    <div class="form-group">
+      <label for="path_maps">Sonarr → local path mappings</label>
+      <textarea id="path_maps" name="path_maps" rows="4"
+                placeholder="/tv:/srv/media/tv&#10;/anime:/srv/media/anime">{% for m in settings.path_maps %}{{ m.sonarr }}:{{ m.local }}
+{% endfor %}</textarea>
+      <p class="text-muted text-small mt-1">
+        One mapping per line: <code>sonarr_path:local_path</code>.<br>
+        Sonarr reports series paths using its own internal mount (e.g. <code>/tv</code>).
+        If Parsarr's container mounts your library at a different path (e.g. <code>/srv/media/tv</code>),
+        add a line like <code>/tv:/srv/media/tv</code> so files land in the right place.
+      </p>
+    </div>
+  </div>
+
   <div class="btn-row">
     <button type="submit" class="btn btn-primary">Save settings</button>
   </div>

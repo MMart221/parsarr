@@ -304,7 +304,9 @@ function initSettings() {
     const fd = new FormData(form);
     const payload = {};
     for (const [k, v] of fd.entries()) {
-      if (v) payload[k] = v;
+      // Always include path_maps (even empty, to allow clearing all mappings).
+      // Skip other blank fields so we don't overwrite passwords with empty strings.
+      if (v || k === "path_maps") payload[k] = v;
     }
     try {
       await api("POST", "/settings", payload);
